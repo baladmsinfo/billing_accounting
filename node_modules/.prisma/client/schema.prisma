@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(USER)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+model Company {
+  id        String         @id @default(uuid())
+  name      String
+  gstNumber String?
+  users     User[]
+  accounts  Account[]
+  journals  JournalEntry[]
+  invoices  Invoice[]
+  products  Product[]
+  items     Item[] // Added for opposite side of Item.company
+  customers Customer[]
+  taxRates  TaxRate[]
+  stock     StockLedger[] // Added for opposite side of StockLedger.company
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model Account {
+  id        String         @id @default(uuid())
+  name      String
+  code      String
+  type      AccountType
+  companyId String
+  company   Company        @relation(fields: [companyId], references: [id])
+  parentId  String?
+  parent    Account?       @relation("AccountParent", fields: [parentId], references: [id])
+  children  Account[]      @relation("AccountParent")
+  journals  JournalEntry[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+model JournalEntry {
+  id          String   @id @default(uuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  date        DateTime
+  description String
+  debit       Float
+  credit      Float
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model Product {
+  id           String        @id @default(uuid())
+  name         String
+  sku          String        @unique
+  description  String?
+  companyId    String
+  company      Company       @relation(fields: [companyId], references: [id])
+  items        Item[]
+  invoiceItems InvoiceItem[] // Added opposite side of InvoiceItem.product
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Item {
+  id           String        @id @default(uuid())
+  productId    String
+  product      Product       @relation(fields: [productId], references: [id])
+  sku          String
+  price        Float
+  quantity     Int           @default(0)
+  location     String?
+  companyId    String
+  company      Company       @relation(fields: [companyId], references: [id])
+  invoiceItems InvoiceItem[]
+  stock        StockLedger[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([sku, companyId])
+}
+
+model Customer {
+  id        String    @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  gstin     String?
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+  invoices  Invoice[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String
+  companyId     String
+  company       Company       @relation(fields: [companyId], references: [id])
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  date          DateTime
+  dueDate       DateTime?
+  status        InvoiceStatus @default(PENDING)
+  items         InvoiceItem[]
+  totalAmount   Float
+  taxAmount     Float
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model InvoiceItem {
+  id        String   @id @default(uuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  itemId    String
+  item      Item     @relation(fields: [itemId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Float
+  taxRateId String?
+  taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
+  total     Float
+}
+
+model TaxRate {
+  id        String        @id @default(uuid())
+  name      String
+  rate      Float
+  type      TaxType
+  companyId String
+  company   Company       @relation(fields: [companyId], references: [id])
+  items     InvoiceItem[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+enum TaxType {
+  GST
+  IGST
+  SGST
+  CGST
+}
+
+model StockLedger {
+  id        String       @id @default(uuid())
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id])
+  itemId    String
+  item      Item         @relation(fields: [itemId], references: [id])
+  date      DateTime     @default(now())
+  type      StockTxnType
+  quantity  Int
+  note      String?
+}
+
+enum StockTxnType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+}

@@ -12,14 +12,14 @@ module.exports = async function (fastify, opts) {
         summary: 'Create a new invoice',
         body: {
           type: 'object',
-          required: ['customerId', 'invoiceNumber', 'date', 'dueDate', 'items'],
+          required: ['customerId', 'date', 'dueDate', 'items'],
           properties: {
             customerId: {
               type: 'string',
               format: 'uuid',
               example: '94a13b76-f6fd-451d-b363-032cc75a08cc'
             },
-            invoiceNumber: { type: 'string', example: 'INV-1001' },
+            invoiceNumber: { type: ['string', 'null'], example: 'INV-1001' },
             date: { type: 'string', format: 'date-time', example: '2025-08-12T00:00:00Z' },
             dueDate: { type: 'string', format: 'date-time', example: '2025-08-22T00:00:00Z' },
             items: {
@@ -41,7 +41,7 @@ module.exports = async function (fastify, opts) {
                   quantity: { type: 'integer', example: 2 },
                   price: { type: 'number', example: 75000 },
                   taxRateId: {
-                    type: 'string',
+                    type: ['string', 'null'],
                     format: 'uuid',
                     example: '04f4af96-b1d2-4ef9-9a38-5e2b4196e8a4'
                   }
@@ -87,6 +87,84 @@ module.exports = async function (fastify, opts) {
         reply.code(500).send({
           statusCode: 500,
           message: 'Failed to create invoice',
+          error: error.message
+        })
+      }
+    }
+  )
+
+
+  fastify.post(
+    '/purchase',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Invoice'],
+        summary: 'Create a new purchase invoice',
+        body: {
+          type: 'object',
+          required: ['vendorId', 'date', 'dueDate', 'items'],
+          properties: {
+            vendorId: {
+              type: 'string',
+              format: 'uuid',
+              example: 'f2c23987-7d6e-4e31-95f4-34a15c9098e2'
+            },
+            invoiceNumber: { type: ['string', 'null'], example: 'PINV-1001' },
+            date: { type: 'string', format: 'date-time', example: '2025-08-12T00:00:00Z' },
+            dueDate: { type: 'string', format: 'date-time', example: '2025-08-22T00:00:00Z' },
+            items: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['quantity', 'price'],
+                properties: {
+                  itemId: { type: ['string', 'null'] },
+                  productId: { type: ['string', 'null'] },
+                  productData: { type: 'object' },
+                  categoryId: { type: ['string', 'null'] },
+                  subCategoryId: { type: ['string', 'null'] },
+                  quantity: { type: 'integer', example: 10 },
+                  sku: { type: 'string', example: 'LAP-001-Blue' },
+                  location: { type: 'string', example: 'Warehouse A' },
+                  price: { type: 'number', example: 500 },
+                  taxRateId: { type: ['string', 'null'] }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const { vendorId, invoiceNumber, date, dueDate, items } = request.body
+
+        const invoiceData = {
+          invoiceNumber,
+          date,
+          dueDate,
+          items,
+          type: 'PURCHASE',
+          status: 'PENDING',
+          companyId: request.user.companyId,
+          vendorId,
+          company: { connect: { id: request.user.companyId } },
+          vendor: { connect: { id: vendorId } }
+        }
+
+        const invoice = await svc.createPurchaseInvoice(fastify.prisma, invoiceData)
+
+        reply.code(201).send({
+          statusCode: 201,
+          message: 'Purchase invoice created successfully',
+          data: invoice
+        })
+      } catch (error) {
+        fastify.log.error(error)
+        reply.code(500).send({
+          statusCode: 500,
+          message: 'Failed to create purchase invoice',
           error: error.message
         })
       }
@@ -176,83 +254,115 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
+  fastify.get('/options', {
+    preHandler: [fastify.authenticate]
+  }, async (req, reply) => {
+    console.log("CompantId : ", req.user);
 
-  fastify.post(
-    '/purchase',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Invoice'],
-        summary: 'Create a new purchase invoice',
-        body: {
-          type: 'object',
-          required: ['vendorId', 'invoiceNumber', 'date', 'dueDate', 'items'],
-          properties: {
-            vendorId: {
-              type: 'string',
-              format: 'uuid',
-              example: 'f2c23987-7d6e-4e31-95f4-34a15c9098e2'
-            },
-            invoiceNumber: { type: 'string', example: 'PINV-1001' },
-            date: { type: 'string', format: 'date-time', example: '2025-08-12T00:00:00Z' },
-            dueDate: { type: 'string', format: 'date-time', example: '2025-08-22T00:00:00Z' },
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                required: ['quantity', 'price'],
-                properties: {
-                  itemId: { type: ['string', 'null'] },
-                  productId: { type: ['string', 'null'] },
-                  productData: { type: 'object' },
-                  categoryId: { type: ['string', 'null'] },
-                  subCategoryId: { type: ['string', 'null'] },
-                  quantity: { type: 'integer', example: 10 },
-                  sku: { type: 'string', example: 'LAP-001-Blue' },
-                  location: { type: 'string', example: 'Warehouse A' },
-                  price: { type: 'number', example: 500 },
-                  taxRateId: { type: ['string', 'null'] }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    async (request, reply) => {
-      try {
-        const { vendorId, invoiceNumber, date, dueDate, items } = request.body
+    const companyId = req.user.companyId
 
-        const invoiceData = {
-          invoiceNumber,
-          date,
-          dueDate,
-          items,
-          type: 'PURCHASE',
-          status: 'PENDING',
-          companyId: request.user.companyId,
-          vendorId,
-          company: { connect: { id: request.user.companyId } },
-          vendor: { connect: { id: vendorId } }
-        }
-
-        const invoice = await svc.createPurchaseInvoice(fastify.prisma, invoiceData)
-
-        reply.code(201).send({
-          statusCode: 201,
-          message: 'Purchase invoice created successfully',
-          data: invoice
-        })
-      } catch (error) {
-        fastify.log.error(error)
-        reply.code(500).send({
-          statusCode: 500,
-          message: 'Failed to create purchase invoice',
-          error: error.message
-        })
-      }
+    if (!companyId) {
+      return reply.code(400).send({
+        statusCode: 400,
+        message: 'Missing companyId in user context',
+      })
     }
-  )
+
+    try {
+      let customers = []
+      let vendors = []
+      let products = []
+      let taxRates = []
+
+      // --- Fetch Customers ---
+      try {
+        customers = await fastify.prisma.customer.findMany({
+          where: { companyId },
+          select: { id: true, name: true, email: true },
+        })
+      } catch (err) {
+        console.error('❌ Failed to fetch customers:', err)
+        throw new Error('Failed to fetch customers')
+      }
+
+      // --- Fetch Vendors ---
+      try {
+        vendors = await fastify.prisma.vendor.findMany({
+          where: { companyId },
+          select: { id: true, name: true, email: true },
+        })
+      } catch (err) {
+        console.error('❌ Failed to fetch vendors:', err)
+        throw new Error('Failed to fetch vendors')
+      }
+
+      // --- Fetch Products ---
+      try {
+        products = await fastify.prisma.product.findMany({
+          where: { companyId },
+          select: { id: true, name: true, sku: true },
+        })
+      } catch (err) {
+        console.error('❌ Failed to fetch products:', err)
+        throw new Error('Failed to fetch products')
+      }
+
+      // --- Fetch Tax Rates ---
+      try {
+        taxRates = await fastify.prisma.taxRate.findMany({
+          where: { companyId },
+          select: { id: true, name: true, rate: true },
+        })
+      } catch (err) {
+        console.error('❌ Failed to fetch tax rates:', err)
+        throw new Error('Failed to fetch tax rates')
+      }
+
+      // --- Response ---
+      return reply.send({
+        statusCode: 200,
+        data: { customers, vendors, products, taxRates },
+      })
+    } catch (err) {
+      console.error('🔥 Error in /options route:', err.message)
+      return reply.code(500).send({
+        statusCode: 500,
+        message: err.message || 'Failed to fetch options',
+      })
+    }
+  })
+
+  fastify.get('/products-with-items', {
+    preHandler: [fastify.authenticate]
+  }, async (req, reply) => {
+    try {
+      const companyId = req.user.companyId
+
+      const products = await fastify.prisma.product.findMany({
+        where: { companyId },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          description: true,
+          items: {
+            select: {
+              id: true,
+              sku: true,
+              price: true,
+              quantity: true,
+              location: true,
+            },
+          },
+        },
+      })
+
+      return reply.send({ statusCode: 200, data: products })
+    } catch (err) {
+      console.error('Failed to fetch products with items:', err)
+      return reply.send({ statusCode: 500, message: 'Failed to fetch products with items' })
+    }
+  })
 
   fastify.get(
     '/:id',
@@ -466,6 +576,114 @@ module.exports = async function (fastify, opts) {
         return reply.code(500).send({
           statusCode: 500,
           message: 'Failed to delete invoice',
+          error: error.message
+        })
+      }
+    }
+  )
+
+  fastify.get(
+    '/',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Invoice'],
+        summary: 'Get company invoices separated by type with optional date and status filters, with pagination',
+        querystring: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['PENDING', 'PARTIAL', 'PAYLATER', 'PAID', 'CANCELLED'],
+              nullable: true
+            },
+            from: { type: 'string', format: 'date-time', nullable: true },
+            to: { type: 'string', format: 'date-time', nullable: true },
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 100, default: 10 }
+          }
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const { status, from, to, page = 1, limit = 10 } = request.query
+        const companyId = request.user.companyId
+
+        // Base filters
+        const baseFilters = { companyId }
+        if (status) baseFilters.status = status
+        if (from || to) baseFilters.date = {}
+        if (from) baseFilters.date.gte = new Date(from)
+        if (to) baseFilters.date.lte = new Date(to)
+
+        const skip = (page - 1) * limit
+
+        // SALE invoices
+        const [saleInvoices, saleTotal] = await Promise.all([
+          fastify.prisma.invoice.findMany({
+            where: { ...baseFilters, type: 'SALE' },
+            include: {
+              customer: true,
+              items: { include: { product: true, taxRate: true } },
+              payments: true
+            },
+            orderBy: { date: 'desc' },
+            skip,
+            take: limit
+          }),
+          fastify.prisma.invoice.count({
+            where: { ...baseFilters, type: 'SALE' }
+          })
+        ])
+
+        // PURCHASE invoices
+        const [purchaseInvoices, purchaseTotal] = await Promise.all([
+          fastify.prisma.invoice.findMany({
+            where: { ...baseFilters, type: 'PURCHASE' },
+            include: {
+              vendor: true,
+              items: { include: { product: true, taxRate: true } },
+              payments: true
+            },
+            orderBy: { date: 'desc' },
+            skip,
+            take: limit
+          }),
+          fastify.prisma.invoice.count({
+            where: { ...baseFilters, type: 'PURCHASE' }
+          })
+        ])
+
+        reply.code(200).send({
+          statusCode: 200,
+          message: 'Invoices fetched successfully',
+          data: {
+            sale: {
+              invoices: saleInvoices,
+              pagination: {
+                total: saleTotal,
+                page,
+                limit,
+                totalPages: Math.ceil(saleTotal / limit)
+              }
+            },
+            purchase: {
+              invoices: purchaseInvoices,
+              pagination: {
+                total: purchaseTotal,
+                page,
+                limit,
+                totalPages: Math.ceil(purchaseTotal / limit)
+              }
+            }
+          }
+        })
+      } catch (error) {
+        fastify.log.error(error)
+        reply.code(500).send({
+          statusCode: 500,
+          message: 'Failed to fetch invoices',
           error: error.message
         })
       }

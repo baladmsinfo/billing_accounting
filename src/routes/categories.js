@@ -1,53 +1,47 @@
 'use strict'
 
 module.exports = async function (fastify, opts) {
-    // Create category with optional children (subcategories)
     fastify.post(
         '/',
         {
-            preHandler: [fastify.authenticate],
-            schema: {
-                tags: ['Category'],
-                description: 'Create a new category with optional subcategories',
-                body: {
-                    type: 'object',
-                    required: ['name'],
-                    properties: {
-                        name: { type: 'string', example: 'Electronics' },
-                        description: { type: 'string', example: 'All electronic items' },
-                        children: {
-                            type: 'array',
-                            items: {
-                                type: 'object',
-                                required: ['name'],
-                                properties: {
-                                    name: { type: 'string', example: 'Laptops' },
-                                    description: { type: 'string', example: 'Portable computers' }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            preHandler: [fastify.authenticate]
         },
         async (request, reply) => {
             try {
-                const data = { ...request.body, companyId: request.user.companyId }
+                const { name, description, children = [] } = request.body
+                const { companyId } = request.user
+
+                const existingCategory = await fastify.prisma.category.findFirst({
+                    where: {
+                        companyId,
+                        name: {
+                            equals: name,
+                            mode: 'insensitive',
+                        },
+                    },
+                })
+
+                if (existingCategory) {
+                    return reply.code(400).send({
+                        statusCode: '01',
+                        message: `Category '${name}' already exists for this company.`,
+                    })
+                }
 
                 const category = await fastify.prisma.category.create({
                     data: {
-                        name: data.name.toUpperCase(),
-                        description: data.description,
-                        companyId: data.companyId,
+                        name: name.toUpperCase(),
+                        description,
+                        companyId,
                         children: {
-                            create: data.children?.map(c => ({
+                            create: children.map(c => ({
                                 name: c.name.toUpperCase(),
                                 description: c.description,
-                                companyId: data.companyId,
-                            }))
-                        }
+                                companyId,
+                            })),
+                        },
                     },
-                    include: { children: true }
+                    include: { children: true },
                 })
 
                 return reply.code(201).send({
@@ -60,6 +54,53 @@ module.exports = async function (fastify, opts) {
                 return reply.code(500).send({
                     statusCode: '99',
                     message: 'Failed to create category',
+                    error: error.message
+                })
+            }
+        }
+    )
+
+    fastify.post(
+        '/:parentId/subcategory',
+        {
+            preHandler: [fastify.authenticate],
+        },
+        async (request, reply) => {
+            try {
+                const { parentId } = request.params
+                const { name, description } = request.body
+                const { companyId } = request.user
+
+                const parent = await fastify.prisma.category.findUnique({
+                    where: { id: parentId },
+                })
+
+                if (!parent) {
+                    return reply.code(404).send({
+                        statusCode: '01',
+                        message: 'Parent category not found'
+                    })
+                }
+
+                const subcategory = await fastify.prisma.category.create({
+                    data: {
+                        name: name.toUpperCase(),
+                        description,
+                        parentId: parentId,
+                        companyId
+                    }
+                })
+
+                return reply.code(201).send({
+                    statusCode: '00',
+                    message: 'Subcategory created successfully',
+                    data: subcategory
+                })
+            } catch (error) {
+                fastify.log.error(error)
+                return reply.code(500).send({
+                    statusCode: '99',
+                    message: 'Failed to create subcategory',
                     error: error.message
                 })
             }

@@ -14,22 +14,37 @@ enum Role {
 }
 
 model User {
-  id               String    @id @default(uuid())
-  email            String    @unique
-  password         String
-  name             String
-  role             Role      @default(USER)
-  status           Boolean   @default(false)
-  mobile_verifited Boolean   @default(false)
-  email_verifited  Boolean   @default(false)
-  invited          Boolean   @default(false)
-  inviteToken      String?
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  name              String
+  role              Role      @default(USER)
+  status            Boolean   @default(false)
+  mobile_verifited  Boolean   @default(false)
+  email_verifited   Boolean   @default(false)
+  invited           Boolean   @default(false)
+  inviteToken       String?
   inviteTokenExpiry DateTime?
 
-  companies        Company[]   // 👈 user can own many companies
+  companyId         String?    // 👈 Add this field
+  company           Company?   @relation(fields: [companyId], references: [id])
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Currency {
+  id          String     @id @default(uuid())
+  code        String     @unique        
+  name        String                    
+  symbol      String                    
+  country     String                    
+  isDefault   Boolean     @default(true)
+
+  companies   Company[]                  
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 model Company {
@@ -37,10 +52,9 @@ model Company {
   name             String
   gstNumber        String?
 
-  ownerId          String
-  owner            User         @relation(fields: [ownerId], references: [id]) // many-to-one relation
+  users            User[]      
 
-  branches         Branch[]     
+  branches         Branch[]
   accounts         Account[]
   journals         JournalEntry[]
   invoices         Invoice[]
@@ -53,7 +67,8 @@ model Company {
   categories       Category[]
   invoiceTax       InvoiceTax[]
   vendors          Vendor[]
-  carts            Cart[] 
+  carts            Cart[]
+
   primaryEmail     String
   secondaryEmail   String?
   primaryPhoneNo   String
@@ -66,6 +81,9 @@ model Company {
   state            String
   pincode          Int
   companyType      String
+
+  currencyId       String
+  currency         Currency   @relation(fields: [currencyId], references: [id])
 
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
@@ -124,7 +142,7 @@ model JournalEntry {
 
 model Category {
   id          String      @id @default(uuid())
-  name        String      @unique
+  name        String      
   description String?
 
   companyId   String
@@ -266,7 +284,6 @@ model CartItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now())
 }
-
 
 model Vendor {
   id        String    @id @default(uuid())

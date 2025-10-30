@@ -116,10 +116,10 @@ module.exports = async function (fastify, opts) {
           type: 'object',
           properties: {
             page: { type: 'integer', example: 1 },
-            take: { type: 'integer', example: 20 }
-          }
-        }
-      }
+            take: { type: 'integer', example: 20 },
+          },
+        },
+      },
     },
     async (request, reply) => {
       try {
@@ -127,18 +127,64 @@ module.exports = async function (fastify, opts) {
         const take = Number(request.query.take || 20)
         const skip = (page - 1) * take
 
-        const products = await productSvc.listProducts(fastify.prisma, request.user.companyId, { skip, take })
+        // fetch products (with items)
+        const [products, total] = await Promise.all([
+          productSvc.listProducts(fastify.prisma, request.user.companyId, { skip, take }),
+          fastify.prisma.product.count({
+            where: { companyId: request.user.companyId },
+          }),
+        ])
 
         return reply.code(200).send({
           statusCode: '00',
           message: 'Products fetched successfully',
-          data: products
+          data: products,
+          pagination: { page, take, total },
         })
       } catch (error) {
         fastify.log.error(error)
         return reply.code(500).send({
           statusCode: '99',
           message: 'Failed to fetch products',
+          error: error.message,
+        })
+      }
+    }
+  )
+
+  // Get category and sub-category
+
+  fastify.get(
+    '/category/subcategory',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Category'],
+        description: 'Fetch all categories and subcategories for the current company'
+      }
+    },
+    async (request, reply) => {
+      try {
+        const companyId = request.user.companyId
+
+        const categories = await fastify.prisma.category.findMany({
+          where: { companyId, parentId: null },
+          include: {
+            children: true // Subcategories
+          },
+          orderBy: { name: 'asc' }
+        })
+
+        return reply.code(200).send({
+          statusCode: '00',
+          message: 'Categories fetched successfully',
+          data: categories
+        })
+      } catch (error) {
+        fastify.log.error(error)
+        return reply.code(500).send({
+          statusCode: '99',
+          message: 'Failed to fetch categories',
           error: error.message
         })
       }
@@ -194,7 +240,7 @@ module.exports = async function (fastify, opts) {
   )
 
   // Update product
-  
+
   fastify.put(
     '/:id',
     {

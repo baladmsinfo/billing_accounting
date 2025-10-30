@@ -76,11 +76,9 @@ async function createUser(prisma, data) {
 async function findByEmail(prisma, email) {
   return prisma.user.findUnique({
     where: { email },
-    include: { companies: true } // include companies for login
   })
 }
 
-// Now list users by companyId means: fetch users that *own* that company
 async function listUsers(prisma, userId, pagination = {}) {
   return prisma.user.findMany({
     where: {

@@ -384,7 +384,14 @@ module.exports = async function (fastify, opts) {
       try {
         const inv = await fastify.prisma.invoice.findUnique({
           where: { id: request.params.id },
-          include: { items: true }
+          include: {
+            customer: true,
+            vendor: true,
+            payments: true,
+            items: {
+              include: { product: true, item: true, taxRate: true }
+            }
+          }
         })
 
         if (!inv) {

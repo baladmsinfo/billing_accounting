@@ -57,7 +57,7 @@ module.exports = async function (fastify) {
         preHandler: [fastify.authenticate],
         schema: {
             tags: ['Reports'],
-            summary: 'Get trial balance report',
+            summary: 'Get trial balance report grouped by account type',
             querystring: {
                 type: 'object',
                 properties: {
@@ -70,14 +70,13 @@ module.exports = async function (fastify) {
         try {
             const { startDate, endDate } = req.query
 
-            // Build date filter only if provided
-            let dateFilter = {}
-            if (startDate || endDate) {
-                dateFilter = {
-                    gte: startDate ? new Date(startDate) : undefined,
-                    lte: endDate ? new Date(endDate) : undefined
-                }
-            }
+            const dateFilter =
+                startDate || endDate
+                    ? {
+                        gte: startDate ? new Date(startDate) : undefined,
+                        lte: endDate ? new Date(endDate) : undefined
+                    }
+                    : {}
 
             const grouped = await fastify.prisma.journalEntry.groupBy({
                 by: ['accountId'],
@@ -89,14 +88,16 @@ module.exports = async function (fastify) {
             })
 
             const result = await Promise.all(
-                grouped.map(async t => {
+                grouped.map(async (t) => {
                     const account = await fastify.prisma.account.findUnique({
-                        where: { id: t.accountId }
+                        where: { id: t.accountId },
+                        select: { id: true, name: true, type: true }
                     })
 
                     return {
                         accountId: t.accountId,
                         accountName: account?.name || 'Unknown',
+                        type: account?.type || 'OTHER',
                         debit: t._sum.debit || 0,
                         credit: t._sum.credit || 0,
                         balance: (t._sum.debit || 0) - (t._sum.credit || 0)
@@ -104,16 +105,59 @@ module.exports = async function (fastify) {
                 })
             )
 
-            // 👉 Calculate totals
-            const totalDebit = result.reduce((sum, r) => sum + r.debit, 0)
-            const totalCredit = result.reduce((sum, r) => sum + r.credit, 0)
+            const groups = {
+                assets: result.filter(a => a.type === 'ASSET'),
+                liabilities: result.filter(a => a.type === 'LIABILITY'),
+                equity: result.filter(a => a.type === 'EQUITY'),
+                income: result.filter(a => a.type === 'INCOME'),
+                expenses: result.filter(a => a.type === 'EXPENSE')
+            }
 
-            const isBalanced = totalDebit === totalCredit
+            const calcTotals = arr => ({
+                debit: arr.reduce((s, a) => s + a.debit, 0),
+                credit: arr.reduce((s, a) => s + a.credit, 0)
+            })
+
+            const totals = {
+                assets: calcTotals(groups.assets),
+                liabilities: calcTotals(groups.liabilities),
+                equity: calcTotals(groups.equity),
+                income: calcTotals(groups.income),
+                expenses: calcTotals(groups.expenses)
+            }
+
+            const totalDebit = Object.values(totals).reduce((s, t) => s + t.debit, 0)
+            const totalCredit = Object.values(totals).reduce((s, t) => s + t.credit, 0)
+            const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 // allow floating error
 
             return {
                 statusCode: '00',
-                data: result,
-                totals: {
+                data: [
+                    {
+                        group: 'Application of Funds (Assets)',
+                        items: groups.assets,
+                        totals: totals.assets
+                    },
+                    {
+                        group: 'Source of Funds (Liabilities & Equity)',
+                        items: [...groups.liabilities, ...groups.equity],
+                        totals: {
+                            debit: totals.liabilities.debit + totals.equity.debit,
+                            credit: totals.liabilities.credit + totals.equity.credit
+                        }
+                    },
+                    {
+                        group: 'Income',
+                        items: groups.income,
+                        totals: totals.income
+                    },
+                    {
+                        group: 'Expenses',
+                        items: groups.expenses,
+                        totals: totals.expenses
+                    }
+                ],
+                summary: {
                     totalDebit,
                     totalCredit,
                     isBalanced
@@ -121,7 +165,11 @@ module.exports = async function (fastify) {
             }
         } catch (err) {
             req.log.error(err)
-            return reply.code(500).send({ statusCode: '99', message: 'Failed to fetch trial balance', error: err.message })
+            return reply.code(500).send({
+                statusCode: '99',
+                message: 'Failed to fetch trial balance',
+                error: err.message
+            })
         }
     })
 }

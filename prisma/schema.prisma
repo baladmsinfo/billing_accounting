@@ -25,6 +25,7 @@ model User {
   invited           Boolean   @default(false)
   inviteToken       String?
   inviteTokenExpiry DateTime?
+  invoiceItemTimelines InvoiceItemTimeline[]
 
   companyId         String?    // 👈 Add this field
   company           Company?   @relation(fields: [companyId], references: [id])
@@ -359,6 +360,7 @@ model InvoiceItem {
   price     Float
   status    InvoiceItemStatus  @default(ORDERED)
   taxRateId String?
+  timelines InvoiceItemTimeline[]
   taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
   total     Float
 }
@@ -369,6 +371,20 @@ enum InvoiceItemStatus {
   SHIPPED
   DELIVERED
   CANCELLED
+  RETURNED
+}
+
+model InvoiceItemTimeline {
+  id          String   @id @default(uuid())
+  invoiceItemId String
+  oldStatus   String?
+  newStatus   String
+  changedAt   DateTime @default(now())
+  note        String?
+  userId      String?
+  invoiceItem InvoiceItem @relation(fields: [invoiceItemId], references: [id])
+  user        User?       @relation(fields: [userId], references: [id])
+  @@index([invoiceItemId])
 }
 
 model TaxRate {

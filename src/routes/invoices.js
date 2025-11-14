@@ -364,58 +364,68 @@ module.exports = async function (fastify, opts) {
     }
   })
 
-  fastify.get(
-    '/:id',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Invoice'],
-        summary: 'Get invoice by ID',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string', format: 'uuid', example: 'a1b2c3d4-5678-90ab-cdef-1234567890ab' }
-          }
-        }
-      }
+  fastify.get('/:id', {
+    preHandler: [fastify.authenticate],
+    schema: {
+      tags: ['Invoice'],
+      summary: 'Get invoice by ID with full details',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+        },
+      },
     },
-    async (request, reply) => {
-      try {
-        const inv = await fastify.prisma.invoice.findUnique({
-          where: { id: request.params.id },
-          include: {
-            customer: true,
-            vendor: true,
-            payments: true,
-            items: {
-              include: { product: true, item: true, taxRate: true }
-            }
-          }
-        })
+  }, async (req, reply) => {
+    try {
+      const inv = await fastify.prisma.invoice.findUnique({
+        where: { id: req.params.id },
+        include: {
+          customer: true,
+          vendor: true,
+          company: {
+            include: {
+              currency: true,
+            },
+          },
+          payments: {
+            orderBy: { date: 'asc' },
+          },
+          items: {
+            include: {
+              product: true,
+              item: true,
+              taxRate: true,
+            },
+          },
+          invoiceTax: {
+            include: { taxRate: true },
+          },
+        },
+      });
 
-        if (!inv) {
-          return reply.code(404).send({
-            statusCode: 404,
-            message: 'Invoice not found'
-          })
-        }
-
-        return reply.code(200).send({
-          statusCode: 200,
-          message: 'Invoice fetched successfully',
-          data: inv
-        })
-      } catch (error) {
-        fastify.log.error(error)
-        return reply.code(500).send({
-          statusCode: 500,
-          message: 'Failed to fetch invoice',
-          error: error.message
-        })
+      if (!inv) {
+        return reply.code(404).send({
+          statusCode: 404,
+          message: 'Invoice not found',
+        });
       }
+
+      return reply.code(200).send({
+        statusCode: 200,
+        message: 'Invoice fetched successfully',
+        data: inv,
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.code(500).send({
+        statusCode: 500,
+        message: 'Failed to fetch invoice',
+        error: error.message,
+      });
     }
-  )
+  });
 
   fastify.put(
     '/process/:id',
@@ -423,7 +433,7 @@ module.exports = async function (fastify, opts) {
       preHandler: [fastify.authenticate],
       schema: {
         tags: ['Invoice'],
-        summary: 'Update invoice item statuses only',
+        summary: 'Update invoice item statuses and record timeline',
         params: {
           type: 'object',
           required: ['id'],
@@ -441,7 +451,17 @@ module.exports = async function (fastify, opts) {
                 required: ['itemId', 'status'],
                 properties: {
                   itemId: { type: 'string', format: 'uuid' },
-                  status: { type: 'string', enum: ['ORDERED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'] }
+                  status: {
+                    type: 'string',
+                    enum: [
+                      'ORDERED',
+                      'PROCESSING',
+                      'SHIPPED',
+                      'DELIVERED',
+                      'CANCELLED',
+                      'RETURNED'
+                    ]
+                  }
                 }
               }
             }
@@ -452,6 +472,7 @@ module.exports = async function (fastify, opts) {
     async (request, reply) => {
       const { id } = request.params
       const { items } = request.body
+      const userId = request.user.id
 
       try {
         const invoice = await fastify.prisma.invoice.findUnique({
@@ -469,9 +490,24 @@ module.exports = async function (fastify, opts) {
         const updatedItems = await fastify.prisma.$transaction(async (tx) => {
           return Promise.all(
             items.map(async ({ itemId, status }) => {
+              const existing = await tx.invoiceItem.findUnique({ where: { id: itemId } })
+              if (!existing) throw new Error(`Item not found: ${itemId}`)
+
+              // Update status
               const updatedItem = await tx.invoiceItem.update({
                 where: { id: itemId },
                 data: { status }
+              })
+
+              // Create timeline entry
+              await tx.invoiceItemTimeline.create({
+                data: {
+                  invoiceItemId: itemId,
+                  oldStatus: existing.status,
+                  newStatus: status,
+                  userId,
+                  note: `Status changed from ${existing.status} to ${status}`
+                }
               })
 
               // ✅ If DELIVERED & invoice type = PURCHASE → increase stock
@@ -509,12 +545,56 @@ module.exports = async function (fastify, opts) {
         fastify.log.error(error)
         return reply.code(500).send({
           statusCode: 500,
-          message: 'Failed to update invoice items',
-          error: error.message
+          message: error.message
         })
       }
     }
   )
+
+  fastify.get('/item/:id/timeline', {
+    preHandler: [fastify.authenticate],
+    schema: {
+      tags: ['Invoice'],
+      summary: 'Fetch timeline for an invoice item',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', format: 'uuid' }
+        }
+      }
+    }
+  }, async (req, reply) => {
+    const { id } = req.params;
+
+    try {
+      const events = await fastify.prisma.invoiceItemTimeline.findMany({
+        where: { invoiceItemId: id },
+        orderBy: { changedAt: 'asc' },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      return reply.send({
+        statusCode: 200,
+        message: 'Timeline fetched successfully',
+        data: events
+      });
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.code(500).send({
+        statusCode: 500,
+        message: 'Failed to fetch item timeline',
+        error: error.message
+      });
+    }
+  });
 
   fastify.delete(
     '/:id',

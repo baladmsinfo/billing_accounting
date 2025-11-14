@@ -53,6 +53,81 @@ module.exports = async function (fastify) {
         return { statusCode: '00', data: ledger }
     })
 
+    fastify.get('/ledger', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            tags: ['Reports'],
+            summary: 'Get full ledger report (all accounts)',
+            querystring: {
+                type: 'object',
+                properties: {
+                    startDate: { type: 'string', format: 'date' },
+                    endDate: { type: 'string', format: 'date' }
+                }
+            }
+        }
+    }, async (req, reply) => {
+        const { startDate, endDate } = req.query
+
+        // 🧾 Get all accounts of the company
+        const accounts = await fastify.prisma.account.findMany({
+            where: { companyId: req.user.companyId },
+            orderBy: { name: 'asc' }
+        })
+
+        // 📜 Get all journal entries within range
+        const entries = await fastify.prisma.journalEntry.findMany({
+            where: {
+                companyId: req.user.companyId,
+                date: {
+                    gte: startDate ? new Date(startDate) : undefined,
+                    lte: endDate ? new Date(endDate) : undefined
+                }
+            },
+            orderBy: [{ accountId: 'asc' }, { date: 'asc' }],
+            include: { account: true }
+        })
+
+        const ledger = []
+
+        // 🧩 For each account, include its entries or show "No Transactions"
+        for (const account of accounts) {
+            ledger.push({
+                isHeader: true,
+                accountId: account.id,
+                accountName: account.name
+            })
+
+            const accountEntries = entries.filter(e => e.accountId === account.id)
+            if (accountEntries.length === 0) {
+                ledger.push({
+                    date: null,
+                    description: 'No transactions',
+                    debit: null,
+                    credit: null,
+                    runningBalance: null,
+                    accountId: account.id
+                })
+                continue
+            }
+
+            let runningBalance = 0
+            for (const e of accountEntries) {
+                runningBalance += e.debit - e.credit
+                ledger.push({
+                    date: e.date,
+                    description: e.description,
+                    debit: e.debit,
+                    credit: e.credit,
+                    runningBalance,
+                    accountId: e.accountId
+                })
+            }
+        }
+
+        return { statusCode: '00', data: ledger }
+    })
+
     fastify.get('/trial-balance', {
         preHandler: [fastify.authenticate],
         schema: {

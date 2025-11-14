@@ -73,4 +73,68 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
+
+  fastify.get('/journals', {
+    preHandler: [fastify.authenticate],
+    schema: {
+      tags: ['Journals'],
+      summary: 'Get all journal entries with pagination and date filters',
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', minimum: 1, default: 1 },
+          take: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
+          startDate: { type: 'string', format: 'date', nullable: true },
+          endDate: { type: 'string', format: 'date', nullable: true },
+        }
+      }
+    }
+  }, async (req, reply) => {
+    try {
+      const { page = 1, take = 10, startDate, endDate } = req.query
+      const user = req.user
+
+      // ✅ Build filter
+      const where = {
+        companyId: user.companyId,
+        ...(startDate && endDate
+          ? {
+            date: {
+              gte: new Date(startDate),
+              lt: new Date(new Date(endDate).setDate(new Date(endDate).getDate() + 1)) // include full end date
+            }
+          }
+          : {})
+      }
+
+      // ✅ Fetch paginated data + count
+      const [journals, total] = await Promise.all([
+        fastify.prisma.journalEntry.findMany({
+          where,
+          include: {
+            account: true,
+          },
+          orderBy: { date: 'desc' },
+          skip: (page - 1) * take,
+          take
+        }),
+        fastify.prisma.journalEntry.count({ where })
+      ])
+
+      return reply.send({
+        statusCode: '00',
+        total,
+        page,
+        take,
+        data: journals
+      })
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.status(500).send({
+        statusCode: '99',
+        message: 'Failed to fetch journal entries',
+        error: error.message
+      })
+    }
+  })
 }

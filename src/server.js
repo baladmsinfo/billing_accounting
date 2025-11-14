@@ -54,7 +54,11 @@ fastify.register(require('@fastify/swagger-ui'), {
 
 // Common plugins
 fastify.register(require('@fastify/helmet'))
-fastify.register(require('@fastify/cors'), { origin: true })
+fastify.register(require('@fastify/cors'), {
+  origin: true, 
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+})
 
 // App plugins
 fastify.register(require('./plugins/prisma'))
@@ -72,6 +76,7 @@ fastify.register(require('./routes/reports'), { prefix: '/api/reports' })
 fastify.register(require('./routes/checkout'), { prefix: '/api/checkout' })
 fastify.register(require('./routes/customers'), { prefix: '/api/customers' })
 fastify.register(require('./routes/vendor'), { prefix: '/api/vendor' })
+fastify.register(require('./routes/dashboard-reports'))
 fastify.register(require('./routes/invoices'), { prefix: '/api/invoices' })
 fastify.register(require('./routes/taxRates'), { prefix: '/api/tax-rates' })
 fastify.register(require('./routes/stock'), { prefix: '/api/stock' })

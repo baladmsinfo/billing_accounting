@@ -1,4 +1,4 @@
-// services/customerService.js
+// src/services/customerService.js
 async function createCustomer(prisma, data) {
   return prisma.customer.create({
     data: {
@@ -7,19 +7,15 @@ async function createCustomer(prisma, data) {
       phone: data.phone,
       gstin: data.gstin,
       companyId: data.companyId,
-
-      // create cart automatically
       carts: {
         create: {
-          companyId: data.companyId,  // ensure company relation
-          status: 'ACTIVE'            // default status
-        }
-      }
+          companyId: data.companyId,
+          status: 'ACTIVE',
+        },
+      },
     },
-    include: {
-      carts: true   // return the created cart too
-    }
-  })
+    include: { carts: true },
+  });
 }
 
 async function listCustomers(prisma, companyId, { skip, take }) {
@@ -27,28 +23,48 @@ async function listCustomers(prisma, companyId, { skip, take }) {
     where: { companyId },
     skip,
     take,
-    include: {
-      carts: true
-    }
-  })
+    include: { carts: true },
+  });
 }
 
 async function updateCustomer(prisma, id, data, companyId) {
-  return prisma.customer.updateMany({
+  // ✅ Step 1: Verify the record belongs to the same company
+  const existing = await prisma.customer.findFirst({
     where: { id, companyId },
-    data
-  })
+  });
+
+  if (!existing) return null;
+
+  // ✅ Step 2: Remove invalid fields
+  const {
+    id: _,
+    companyId: __,
+    carts,
+    createdAt,
+    updatedAt,
+    ...cleanData
+  } = data;
+
+  // ✅ Step 3: Update safely
+  return prisma.customer.update({
+    where: { id },
+    data: cleanData,
+  });
 }
 
 async function deleteCustomer(prisma, id, companyId) {
-  return prisma.customer.deleteMany({
-    where: { id, companyId }
-  })
+  // Optional ownership check
+  const existing = await prisma.customer.findFirst({
+    where: { id, companyId },
+  });
+  if (!existing) return null;
+
+  return prisma.customer.delete({ where: { id } });
 }
 
 module.exports = {
   createCustomer,
   listCustomers,
   updateCustomer,
-  deleteCustomer
-}
+  deleteCustomer,
+};

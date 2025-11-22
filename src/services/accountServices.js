@@ -10,6 +10,17 @@ async function createAccount(prisma, data, companyId) {
   })
 }
 
+async function listAccountsOptions(prisma, companyId) {
+  return await prisma.account.findMany({
+    where: { companyId },
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true
+    }
+  });
+}
+
 async function listAccountsGrouped(prisma, companyId) {
   // 1️⃣ Get all accounts + debit/credit totals using aggregation
   const accounts = await prisma.account.findMany({
@@ -74,4 +85,4 @@ async function listAccounts(prisma, companyId) {
   })
 }
 
-module.exports = { createAccount, listAccountsGrouped, listAccounts }
+module.exports = { createAccount, listAccountsGrouped, listAccountsOptions, listAccounts }

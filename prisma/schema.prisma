@@ -216,6 +216,7 @@ model Item {
   product      Product       @relation(fields: [productId], references: [id])
   sku          String
   price        Float
+  MRP          Float?
   quantity     Int           @default(0)
   location     String?
   companyId    String
@@ -363,6 +364,7 @@ model InvoiceItem {
   timelines InvoiceItemTimeline[]
   taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
   total     Float
+  paidAmount Float @default(0)
 }
 
 enum InvoiceItemStatus {

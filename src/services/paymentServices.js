@@ -1,5 +1,3 @@
-const { Prisma } = require('@prisma/client')
-
 async function createPayment(prisma, data) {
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.create({
@@ -15,7 +13,7 @@ async function createPayment(prisma, data) {
     })
 
     // Update Invoice Status
-    await updateInvoiceStatus(tx, data.invoiceId)
+    await updateInvoiceStatus(tx, data.invoiceId, data.items)
 
     // Journal Entries (optional, can remove if not needed)
     const desc = `Payment for Invoice ${data.invoiceId}`
@@ -61,7 +59,7 @@ async function recordPurchasePayment(prisma, data) {
     })
 
     // Update Invoice Status
-    await updateInvoiceStatus(tx, data.invoiceId)
+    await updateInvoiceStatus(tx, data.invoiceId, data.items)
 
     // Journal Entries (optional, can remove if not needed)
     const desc = `Payment for Purchase Invoice ${data.invoiceId}`
@@ -70,7 +68,7 @@ async function recordPurchasePayment(prisma, data) {
     await tx.journalEntry.create({
       data: {
         companyId: data.companyId,
-        accountId: await svc.getAccountId(tx, data.companyId, 'Cash'),
+        accountId: await getAccountId(tx, data.companyId, 'Cash'),
         date: payment.date,
         description: desc,
         debit: parseFloat(payment.amount.toFixed(2)),
@@ -81,7 +79,7 @@ async function recordPurchasePayment(prisma, data) {
     await tx.journalEntry.create({
       data: {
         companyId: data.companyId,
-        accountId: await svc.getAccountId(tx, data.companyId, 'Accounts Receivable'),
+        accountId: await getAccountId(tx, data.companyId, 'Accounts Receivable'),
         date: payment.date,
         description: desc,
         debit: 0,
@@ -93,14 +91,15 @@ async function recordPurchasePayment(prisma, data) {
   })
 }
 
-async function updateInvoiceStatus(tx, invoiceId) {
+async function updateInvoiceStatus(tx, invoiceId, items) {
   const invoice = await tx.invoice.findUnique({
     where: { id: invoiceId },
-    include: { payments: true }
+    include: { payments: true, items: true }
   })
   if (!invoice) throw new Error('Invoice not found')
 
   const totalPaid = invoice.payments.reduce((s, p) => s + p.amount, 0)
+  const invoiceItems = invoice.items
 
   let newStatus = 'PENDING'
   if (totalPaid === 0) newStatus = 'PENDING'
@@ -111,6 +110,27 @@ async function updateInvoiceStatus(tx, invoiceId) {
     where: { id: invoiceId },
     data: { status: newStatus }
   })
+
+  console.log("Items from payload:", items);
+
+  const updatedInvoiceItems = invoiceItems.map(async (item) => {
+    const selected = items.find(i => i.itemId === item.id);
+
+    if (selected) {
+      const newPaidAmount = (item.paidAmount || 0) + selected.balance;
+
+      return tx.invoiceItem.update({
+        where: { id: item.id },
+        data: {
+          paidAmount: newPaidAmount,
+        }
+      });
+    }
+
+    return item;
+  });
+
+  console.log("updatedInvoiceItems:", await Promise.all(updatedInvoiceItems));
 }
 
 async function getAccountId(tx, companyId, name) {

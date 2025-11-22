@@ -29,16 +29,62 @@ module.exports = async function (fastify, opts) {
       try {
         const account = await svc.createAccount(fastify.prisma, request.body, request.user.companyId)
 
-        reply.code(201).send({
-          statusCode: 201,
+        reply.code(200).send({
+          statusCode: "00",
           message: 'Account created successfully',
           data: account
         })
       } catch (error) {
         request.log.error(error)
         reply.code(500).send({
-          statusCode: 500,
+          statusCode: "99",
           message: 'Failed to create account',
+          error: error.message
+        })
+      }
+    }
+  )
+
+  // List Accounts by Type
+  fastify.get(
+    '/type/:type',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Accounts'],
+        summary: 'List accounts by type for a company',
+        params: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']
+            }
+          },
+          required: ['type']
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const { type } = request.params
+        const companyId = request.user.companyId
+
+        const accounts = await svc.listAccountsByType(
+          fastify.prisma,
+          companyId,
+          type
+        )
+
+        reply.code(200).send({
+          statusCode: 200,
+          data: accounts
+        })
+      } catch (error) {
+        request.log.error(error)
+        reply.code(500).send({
+          statusCode: 500,
+          message: 'Failed to fetch accounts by type',
           error: error.message
         })
       }
@@ -50,14 +96,15 @@ module.exports = async function (fastify, opts) {
     '/',
     {
       preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Accounts'],
-        summary: 'List accounts of a company',
-      }
     },
     async (request, reply) => {
       try {
-        const accounts = await svc.listAccounts(fastify.prisma, request.user.companyId)
+        const companyId = request.user.companyId
+
+        const accounts = await svc.listAccountsGrouped(
+          fastify.prisma,
+          companyId
+        )
 
         reply.code(200).send({
           statusCode: 200,
@@ -73,6 +120,8 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
+
+  // Get Journal Entries 
 
   fastify.get('/journals', {
     preHandler: [fastify.authenticate],
@@ -137,4 +186,66 @@ module.exports = async function (fastify, opts) {
       })
     }
   })
+
+  fastify.delete(
+    "/:id",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ["Accounts"],
+        summary: "Delete an account by ID",
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string" }
+          },
+          required: ["id"]
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const { id } = request.params
+        const companyId = request.user.companyId
+
+        const account = await fastify.prisma.account.findUnique({
+          where: { id }
+        })
+
+        if (!account || account.companyId !== companyId) {
+          return reply.code(404).send({
+            statusCode: "01",
+            message: "Account not found"
+          })
+        }
+
+        const journalCount = await fastify.prisma.journalEntry.count({
+          where: { accountId: id, companyId }
+        })
+
+        if (journalCount > 0) {
+          return reply.code(400).send({
+            statusCode: "03",
+            message: "Account cannot be deleted because it has transactions"
+          })
+        }
+
+        await fastify.prisma.account.delete({
+          where: { id }
+        })
+
+        reply.send({
+          statusCode: "00",
+          message: "Account deleted successfully"
+        })
+      } catch (err) {
+        request.log.error(err)
+        reply.code(500).send({
+          statusCode: "99",
+          message: "Unexpected error",
+          error: err.message
+        })
+      }
+    }
+  )
 }

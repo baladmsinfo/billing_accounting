@@ -1,0 +1,421 @@
+'use strict'
+
+module.exports = async function (fastify, opts) {
+
+    const getDateRange = (period) => {
+        const now = new Date()
+        let from, to = new Date()
+
+        if (period === "thisMonth") {
+            from = new Date(now.getFullYear(), now.getMonth(), 1)
+        }
+        else if (period === "thisQuarter") {
+            const q = Math.floor(now.getMonth() / 3)
+            from = new Date(now.getFullYear(), q * 3, 1)
+        }
+        else if (period === "yearToDate") {
+            from = new Date(now.getFullYear(), 0, 1)
+        }
+        else { // thisYear
+            from = new Date(now.getFullYear(), 0, 1)
+        }
+
+        return { from, to }
+    }
+
+    fastify.post(
+        '/',
+        {
+            preHandler: [fastify.authenticate],
+        },
+
+        async (request, reply) => {
+            try {
+                const { category, date, amount, note } = request.body
+                const companyId = request.user.companyId
+
+                // 🔍 1) Fetch the expense account
+                const expenseAccount = await fastify.prisma.account.findFirst({
+                    where: {
+                        companyId,
+                        type: 'EXPENSE',
+                        name: { contains: category, mode: 'insensitive' }
+                    }
+                })
+
+                if (!expenseAccount) {
+                    return reply.code(400).send({
+                        statusCode: '01',
+                        message: `Expense account for category '${category}' not found`
+                    })
+                }
+
+                const cashAccount = await fastify.prisma.account.findFirst({
+                    where: {
+                        companyId,
+                        type: 'ASSET',
+                        name: { contains: 'Cash', mode: 'insensitive' }
+                    }
+                })
+
+                if (!cashAccount) {
+                    return reply.code(400).send({
+                        statusCode: '01',
+                        message: 'Cash/Bank account not found'
+                    })
+                }
+
+                const created = await fastify.prisma.$transaction(async (tx) => {
+                    const debit = await tx.journalEntry.create({
+                        data: {
+                            companyId,
+                            date: new Date(date),
+                            description: note ?? `${category} Expense`,
+                            debit: amount,
+                            credit: 0,
+                            accountId: expenseAccount.id
+                        }
+                    })
+
+                    const credit = await tx.journalEntry.create({
+                        data: {
+                            companyId,
+                            date: new Date(date),
+                            description: note ?? `${category} Expense Payment`,
+                            debit: 0,
+                            credit: amount,
+                            accountId: cashAccount.id
+                        }
+                    })
+
+                    return { debit, credit }
+                })
+
+                return reply.code(201).send({
+                    statusCode: '00',
+                    message: 'Expense created successfully',
+                    data: created
+                })
+            } catch (err) {
+                fastify.log.error(err)
+                return reply.code(500).send({
+                    statusCode: '99',
+                    message: 'Failed to create expense',
+                    error: err.message
+                })
+            }
+        }
+    )
+
+    fastify.get('/chart', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            tags: ['Expense'],
+            summary: 'Get expense summary for chart with period',
+            querystring: {
+                type: 'object',
+                properties: {
+                    period: { type: 'string' }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const companyId = request.user.companyId;
+            const { period = "thisYear" } = request.query;
+
+            const { from, to } = getDateRange(period);
+
+            const expenseAccounts = await fastify.prisma.account.findMany({
+                where: { companyId, type: 'EXPENSE' }
+            });
+
+            const accountIds = expenseAccounts.map(a => a.id);
+
+            const grouped = await fastify.prisma.journalEntry.groupBy({
+                by: ['accountId'],
+                where: {
+                    companyId,
+                    accountId: { in: accountIds },
+                    debit: { gt: 0 },
+                    date: {
+                        gte: from,
+                        lte: to
+                    }
+                },
+                _sum: { debit: true }
+            })
+
+            const chartData = grouped.map(g => ({
+                category: expenseAccounts.find(a => a.id === g.accountId)?.name || "Unknown",
+                total: g._sum.debit || 0
+            }))
+
+            const grandTotal = chartData.reduce((sum, x) => sum + x.total, 0)
+
+            return reply.send({
+                statusCode: "00",
+                message: "Expense chart filtered by period",
+                data: { items: chartData, total: grandTotal }
+            })
+        } catch (err) {
+            console.error(err)
+            reply.code(500).send({ statusCode: "99", message: err.message })
+        }
+    })
+
+    fastify.get(
+        '/',
+        {
+            preHandler: [fastify.authenticate],
+            schema: {
+                tags: ['Expense'],
+                summary: 'Get all expenses (from journal entries)',
+                querystring: {
+                    type: 'object',
+                    properties: {
+                        page: { type: 'number', example: 1 },
+                        take: { type: 'number', example: 10 },
+                        category: { type: 'string', nullable: true },
+                        fromDate: { type: 'string', format: 'date', nullable: true },
+                        toDate: { type: 'string', format: 'date', nullable: true }
+                    }
+                }
+            }
+        },
+
+        async (request, reply) => {
+            try {
+                const { page = 1, take = 10, category, fromDate, toDate } = request.query
+                const skip = (page - 1) * take
+
+                const companyId = request.user.companyId
+
+                const where = {
+                    companyId,
+                    debit: { gt: 0 }, // Only debit entries = expense
+                    account: {
+                        type: 'EXPENSE',
+                        ...(category && { name: { contains: category, mode: 'insensitive' } })
+                    },
+                    ...(fromDate && { date: { gte: new Date(fromDate) } }),
+                    ...(toDate && { date: { lte: new Date(toDate) } })
+                }
+
+                const [rows, total] = await Promise.all([
+                    fastify.prisma.journalEntry.findMany({
+                        where,
+                        skip,
+                        take,
+                        orderBy: { date: 'desc' },
+                        include: {
+                            account: true
+                        }
+                    }),
+                    fastify.prisma.journalEntry.count({ where })
+                ])
+
+                return reply.code(200).send({
+                    statusCode: '00',
+                    message: 'Expenses fetched successfully',
+                    data: rows,
+                    total
+                })
+            } catch (err) {
+                fastify.log.error(err)
+                return reply.code(500).send({
+                    statusCode: '99',
+                    message: 'Failed to fetch expenses',
+                    error: err.message
+                })
+            }
+        }
+    )
+
+    fastify.get(
+        '/options',
+        {
+            preHandler: [fastify.authenticate],
+            schema: {
+                tags: ['Expense'],
+                summary: 'Get all expense account options (excluding Purchases)',
+                response: {
+                    200: {
+                        type: 'object',
+                        properties: {
+                            statusCode: { type: 'string', example: '00' },
+                            message: { type: 'string' },
+                            data: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        id: { type: 'string' },
+                                        name: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        async (request, reply) => {
+            try {
+                const companyId = request.user.companyId
+
+                const options = await fastify.prisma.account.findMany({
+                    where: {
+                        companyId,
+                        type: 'EXPENSE',
+                        NOT: {
+                            name: {
+                                equals: 'Purchases',
+                                mode: 'insensitive'
+                            }
+                        }
+                    },
+                    select: {
+                        id: true,
+                        name: true
+                    },
+                    orderBy: {
+                        name: 'asc'
+                    }
+                })
+
+                return reply.code(200).send({
+                    statusCode: '00',
+                    message: 'Expense options fetched successfully',
+                    data: options
+                })
+            } catch (err) {
+                fastify.log.error(err)
+                return reply.code(500).send({
+                    statusCode: '99',
+                    message: 'Failed to fetch expense options',
+                    error: err.message
+                })
+            }
+        }
+    )
+
+    fastify.put(
+        '/:id',
+        {
+            preHandler: [fastify.authenticate],
+            schema: {
+                tags: ['Expense'],
+                summary: 'Update an expense',
+                params: {
+                    type: 'object',
+                    properties: {
+                        id: { type: 'string' }
+                    }
+                },
+                body: {
+                    type: 'object',
+                    properties: {
+                        category: { type: 'string' },
+                        date: { type: 'string', format: 'date' },
+                        amount: { type: 'number' },
+                        note: { type: 'string' }
+                    }
+                }
+            }
+        },
+
+        async (request, reply) => {
+            try {
+                const { id } = request.params
+                const { category, date, amount, note } = request.body
+                const companyId = request.user.companyId
+
+                const existing = await fastify.prisma.journalEntry.findFirst({
+                    where: { id, companyId },
+                    include: { account: true }
+                })
+
+                if (!existing || existing.account.type !== 'EXPENSE') {
+                    return reply.code(404).send({
+                        statusCode: '01',
+                        message: 'Expense not found'
+                    })
+                }
+
+                // Update expense entry only (debit)
+                const updated = await fastify.prisma.journalEntry.update({
+                    where: { id },
+                    data: {
+                        date: date ? new Date(date) : existing.date,
+                        debit: amount ?? existing.debit,
+                        description: note ?? existing.description
+                    }
+                })
+
+                return reply.code(200).send({
+                    statusCode: '00',
+                    message: 'Expense updated successfully',
+                    data: updated
+                })
+            } catch (err) {
+                fastify.log.error(err)
+                return reply.code(500).send({
+                    statusCode: '99',
+                    message: 'Failed to update expense',
+                    error: err.message
+                })
+            }
+        }
+    )
+
+    fastify.delete(
+        '/:id',
+        {
+            preHandler: [fastify.authenticate],
+            schema: {
+                tags: ['Expense'],
+                summary: 'Delete an expense',
+                params: {
+                    type: 'object',
+                    properties: {
+                        id: { type: 'string' }
+                    }
+                }
+            }
+        },
+
+        async (request, reply) => {
+            try {
+                const { id } = request.params
+                const companyId = request.user.companyId
+
+                const existing = await fastify.prisma.journalEntry.findFirst({
+                    where: { id, companyId }
+                })
+
+                if (!existing) {
+                    return reply.code(404).send({
+                        statusCode: '01',
+                        message: 'Expense not found'
+                    })
+                }
+
+                await fastify.prisma.journalEntry.delete({ where: { id } })
+
+                return reply.code(200).send({
+                    statusCode: '00',
+                    message: 'Expense deleted successfully'
+                })
+            } catch (err) {
+                fastify.log.error(err)
+                return reply.code(500).send({
+                    statusCode: '99',
+                    message: 'Failed to delete expense',
+                    error: err.message
+                })
+            }
+        }
+    )
+}

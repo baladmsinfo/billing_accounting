@@ -58,7 +58,7 @@ module.exports = async function (fastify, opts) {
 
         if (!customerId) {
           return reply.code(400).send({
-            statusCode: 400,
+            statusCode: "01",
             message: 'customerId required'
           })
         }
@@ -77,17 +77,16 @@ module.exports = async function (fastify, opts) {
 
         const invoice = await svc.createInvoice(fastify.prisma, invoiceData)
 
-        reply.code(201).send({
-          statusCode: 201,
+        reply.code(200).send({
+          statusCode: "00",
           message: 'Invoice created successfully',
           data: invoice
         })
       } catch (error) {
         fastify.log.error(error)
         reply.code(500).send({
-          statusCode: 500,
-          message: 'Failed to create invoice',
-          error: error.message
+          statusCode: "02",
+          message: error.message,
         })
       }
     }
@@ -278,7 +277,6 @@ module.exports = async function (fastify, opts) {
       try {
         customers = await fastify.prisma.customer.findMany({
           where: { companyId },
-          select: { id: true, name: true, email: true },
         })
       } catch (err) {
         console.error('❌ Failed to fetch customers:', err)
@@ -289,7 +287,6 @@ module.exports = async function (fastify, opts) {
       try {
         vendors = await fastify.prisma.vendor.findMany({
           where: { companyId },
-          select: { id: true, name: true, email: true },
         })
       } catch (err) {
         console.error('❌ Failed to fetch vendors:', err)
@@ -470,36 +467,34 @@ module.exports = async function (fastify, opts) {
       }
     },
     async (request, reply) => {
-      const { id } = request.params
-      const { items } = request.body
-      const userId = request.user.id
+      const { id } = request.params;
+      const { items } = request.body;
+      const userId = request.user.id;
 
       try {
         const invoice = await fastify.prisma.invoice.findUnique({
           where: { id },
           include: { items: true }
-        })
+        });
 
         if (!invoice) {
           return reply.code(404).send({
             statusCode: 404,
             message: 'Invoice not found'
-          })
+          });
         }
 
         const updatedItems = await fastify.prisma.$transaction(async (tx) => {
           return Promise.all(
             items.map(async ({ itemId, status }) => {
-              const existing = await tx.invoiceItem.findUnique({ where: { id: itemId } })
-              if (!existing) throw new Error(`Item not found: ${itemId}`)
+              const existing = await tx.invoiceItem.findUnique({ where: { id: itemId } });
+              if (!existing) throw new Error(`Item not found: ${itemId}`);
 
-              // Update status
               const updatedItem = await tx.invoiceItem.update({
                 where: { id: itemId },
                 data: { status }
-              })
+              });
 
-              // Create timeline entry
               await tx.invoiceItemTimeline.create({
                 data: {
                   invoiceItemId: itemId,
@@ -508,48 +503,102 @@ module.exports = async function (fastify, opts) {
                   userId,
                   note: `Status changed from ${existing.status} to ${status}`
                 }
-              })
+              });
 
-              // ✅ If DELIVERED & invoice type = PURCHASE → increase stock
+              const item = await tx.item.findUnique({
+                where: { id: updatedItem.itemId }
+              });
+              if (!item) throw new Error(`Item not found: ${updatedItem.itemId}`);
+
+              const qty = updatedItem.quantity;
+
+              if (invoice.type === 'PURCHASE' && status === 'RETURNED') {
+                await tx.stockLedger.create({
+                  data: {
+                    companyId: invoice.companyId,
+                    itemId: updatedItem.itemId,
+                    type: 'ADJUSTMENT',
+                    quantity: -qty,
+                    note: `Purchase return - invoice ${invoice.invoiceNumber}`
+                  }
+                });
+
+                await tx.item.update({
+                  where: { id: updatedItem.itemId },
+                  data: { quantity: item.quantity - qty }
+                });
+              }
+
+              if (invoice.type === 'SALE' && status === 'RETURNED') {
+                await tx.stockLedger.create({
+                  data: {
+                    companyId: invoice.companyId,
+                    itemId: updatedItem.itemId,
+                    type: 'SALE_RETURN',
+                    quantity: qty,
+                    note: `Sale return - invoice ${invoice.invoiceNumber}`
+                  }
+                });
+
+                await tx.item.update({
+                  where: { id: updatedItem.itemId },
+                  data: { quantity: item.quantity + qty }
+                });
+              }
+
+              if (invoice.type === 'SALE' && status === 'CANCELLED') {
+                await tx.stockLedger.create({
+                  data: {
+                    companyId: invoice.companyId,
+                    itemId: updatedItem.itemId,
+                    type: 'ADJUSTMENT',
+                    quantity: qty,
+                    note: `Sale cancelled - invoice ${invoice.invoiceNumber}`
+                  }
+                });
+
+                await tx.item.update({
+                  where: { id: updatedItem.itemId },
+                  data: { quantity: item.quantity + qty }
+                });
+              }
+
               if (status === 'DELIVERED' && invoice.type === 'PURCHASE') {
-                const item = await tx.item.findUnique({ where: { id: updatedItem.itemId } })
-                if (!item) throw new Error(`Item not found: ${updatedItem.itemId}`)
-
                 await tx.stockLedger.create({
                   data: {
                     companyId: invoice.companyId,
                     itemId: updatedItem.itemId,
                     type: 'PURCHASE',
-                    quantity: updatedItem.quantity,
+                    quantity: qty,
                     note: `Purchase - invoice ${invoice.invoiceNumber}`
                   }
-                })
+                });
 
                 await tx.item.update({
                   where: { id: updatedItem.itemId },
-                  data: { quantity: item.quantity + updatedItem.quantity }
-                })
+                  data: { quantity: item.quantity + qty }
+                });
               }
 
-              return updatedItem
+              return updatedItem;
             })
-          )
-        })
+          );
+        });
 
         return reply.code(200).send({
           statusCode: 200,
           message: 'Invoice items updated successfully',
           data: updatedItems
-        })
+        });
       } catch (error) {
-        fastify.log.error(error)
+        fastify.log.error(error);
         return reply.code(500).send({
           statusCode: 500,
           message: error.message
-        })
+        });
       }
     }
-  )
+  );
 
   fastify.get('/item/:id/timeline', {
     preHandler: [fastify.authenticate],

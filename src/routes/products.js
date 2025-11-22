@@ -385,6 +385,144 @@ module.exports = async function (fastify, opts) {
     }
   )
 
+  // ➕ Add new item to an existing product
+  fastify.post(
+    '/:productId/items',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Product'],
+        description: 'Add a new item/variant to an existing product',
+        params: {
+          type: 'object',
+          required: ['productId'],
+          properties: {
+            productId: { type: 'string', example: 'clxyz12345' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['sku', 'price', 'quantity', 'location'],
+          properties: {
+            sku: { type: 'string', example: 'LAP-001-BLUE' },
+            price: { type: 'number', example: 68000 },
+            quantity: { type: 'integer', example: 10 },
+            location: { type: 'string', example: 'Warehouse B' }
+          }
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const { productId } = request.params
+        const { sku, price, quantity, location } = request.body
+        const companyId = request.user.companyId
+
+        // Check product exists
+        const product = await fastify.prisma.product.findFirst({
+          where: { id: productId, companyId },
+          include: { items: true }
+        })
+
+        if (!product) {
+          return reply.code(404).send({
+            statusCode: '01',
+            message: 'Product not found'
+          })
+        }
+
+        // Create new item
+        const newItem = await fastify.prisma.item.create({
+          data: {
+            sku,
+            price,
+            quantity,
+            location,
+            companyId,
+            productId
+          }
+        })
+
+        // Add stock ledger entry if quantity > 0
+        if (quantity > 0) {
+          await fastify.prisma.stockLedger.create({
+            data: {
+              itemId: newItem.id,
+              companyId,
+              type: 'PURCHASE',
+              quantity,
+              note: 'New item added to product'
+            }
+          })
+        }
+
+        const updatedProduct = await fastify.prisma.product.findUnique({
+          where: { id: productId },
+          include: { items: true }
+        })
+
+        return reply.code(201).send({
+          statusCode: '00',
+          message: 'Item added successfully',
+          data: updatedProduct
+        })
+      } catch (error) {
+        fastify.log.error(error)
+        return reply.code(500).send({
+          statusCode: '99',
+          message: 'Failed to add item',
+          error: error.message
+        })
+      }
+    }
+  )
+
+  fastify.put(
+    '/item/:itemId/price',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      try {
+        const { itemId } = request.params
+        const { price, MRP } = request.body
+        const companyId = request.user.companyId
+
+        const existing = await fastify.prisma.item.findFirst({
+          where: { id: itemId, companyId }
+        })
+
+        if (!existing) {
+          return reply.code(404).send({
+            statusCode: '01',
+            message: 'Item not found'
+          })
+        }
+
+        const updated = await fastify.prisma.item.update({
+          where: { id: itemId },
+          data: {
+            price,
+            MRP,
+          }
+        })
+
+        return reply.code(200).send({
+          statusCode: '00',
+          message: 'Item price updated successfully',
+          data: updated
+        })
+      } catch (error) {
+        fastify.log.error(error)
+        return reply.code(500).send({
+          statusCode: '99',
+          message: 'Failed to update item price',
+          error: error.message
+        })
+      }
+    }
+  )
+
   // Delete product
   fastify.delete(
     '/:id',

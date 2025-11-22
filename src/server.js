@@ -67,6 +67,7 @@ fastify.register(require('./plugins/auth'))
 // Routes
 fastify.register(require('./routes/users'), { prefix: '/api/users' })
 fastify.register(require('./routes/account'), { prefix: '/api/account' })
+fastify.register(require('./routes/expense'), { prefix: '/api/expenses' })
 // fastify.register(require('./routes/companies'), { prefix: '/api/companies' })
 fastify.register(require('./routes/categories'), { prefix: '/api/categories' })
 fastify.register(require('./routes/products'), { prefix: '/api/products' })

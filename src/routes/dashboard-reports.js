@@ -98,6 +98,82 @@ module.exports = async function (fastify) {
         })
     })
 
+    fastify.get('/reports/dashboard/profit-loss', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            tags: ['Dashboard'],
+            summary: 'Profit and Loss timeline graph',
+            querystring: {
+                type: 'object',
+                properties: {
+                    period: {
+                        type: 'string',
+                        enum: ['thisYear', 'thisQuarter', 'thisMonth', 'yearToDate'],
+                        default: 'thisYear'
+                    }
+                }
+            }
+        }
+    }, async (req, reply) => {
+
+        const { period } = req.query
+        const { start, end } = getDateRange(period)
+        const companyId = req.user.companyId
+
+        const groupBy =
+            period === 'thisMonth' ? 'day'
+                : period === 'thisQuarter' ? 'week'
+                    : 'month'
+
+        // 1️⃣ Fetch all invoices (Sales & Purchases)
+        const invoices = await fastify.prisma.invoice.findMany({
+            where: {
+                companyId,
+                date: { gte: start, lte: end },
+                type: { in: ['SALE', 'PURCHASE'] }
+            },
+            orderBy: { date: 'asc' }
+        })
+
+        const grouped = {}
+
+        for (const inv of invoices) {
+            const d = new Date(inv.date)
+            let key
+
+            if (groupBy === 'day') {
+                key = d.toISOString().slice(0, 10)
+            } else if (groupBy === 'week') {
+                const weekStart = new Date(d)
+                weekStart.setDate(d.getDate() - d.getDay())
+                key = weekStart.toISOString().slice(0, 10)
+            } else {
+                key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+            }
+
+            if (!grouped[key]) grouped[key] = { sales: 0, purchases: 0 }
+
+            if (inv.type === 'SALE') grouped[key].sales += inv.totalAmount
+            if (inv.type === 'PURCHASE') grouped[key].purchases += inv.totalAmount
+        }
+
+        // 2️⃣ Convert to final P&L structure
+        const sortedKeys = Object.keys(grouped).sort(
+            (a, b) => new Date(a) - new Date(b)
+        )
+
+        const result = sortedKeys.map(dateKey => ({
+            date: dateKey,
+            profitLoss: grouped[dateKey].sales - grouped[dateKey].purchases, // positive = profit, negative = loss
+            sales: grouped[dateKey].sales,
+            purchases: grouped[dateKey].purchases
+        }))
+
+        return reply.send({
+            statusCode: '00',
+            data: result
+        })
+    })
 
     fastify.get('/reports/dashboard/sales', {
         preHandler: [fastify.authenticate],

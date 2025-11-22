@@ -1,36 +1,17 @@
 'use strict'
-const svc = require('../services/paymentServices')
+const {createPayment, recordPurchasePayment} = require('../services/paymentServices')
 
 module.exports = async function (fastify, opts) {
-  // ✅ Schemas
-  const paymentBodySchema = {
-    type: 'object',
-    required: ['invoiceId', 'amount', 'method'],
-    properties: {
-      invoiceId: { type: 'string', example: 'inv_12345' },
-      amount: { type: 'number', example: 5000 },
-      method: { type: 'string', example: 'BANK_TRANSFER' },
-      referenceNo: { type: 'string', example: 'TXN123456' },
-      date: { type: 'string', format: 'date-time', example: '2025-08-18T10:30:00Z' },
-      note: { type: 'string', example: 'Advance payment' }
-    },
-    additionalProperties: false
-  }
 
   // Create Payment
   fastify.post(
     '/',
     {
       preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Payments'],
-        summary: 'Create a payment',
-        body: paymentBodySchema,
-      }
     },
     async (req, reply) => {
       try {
-        const { invoiceId, amount, method, referenceNo, date, note } = req.body
+        const { invoiceId, amount, method, referenceNo, date, items, note } = req.body
 
         const paymentData = {
           companyId: req.user.companyId,
@@ -39,10 +20,11 @@ module.exports = async function (fastify, opts) {
           method,
           referenceNo,
           date,
+          items,
           note
         }
 
-        const payment = await svc.createPayment(fastify.prisma, paymentData)
+        const payment = await createPayment(fastify.prisma, paymentData)
 
         return reply.code(201).send({
           statusCode: 201,
@@ -64,15 +46,10 @@ module.exports = async function (fastify, opts) {
     '/purchase',
     {
       preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Payments'],
-        summary: 'Record Payment for Purchase',
-        body: paymentBodySchema,
-      }
     },
     async (req, reply) => {
       try {
-        const { invoiceId, amount, method, referenceNo, date, note } = req.body
+        const { invoiceId, amount, method, referenceNo, date, items, note } = req.body
 
         const paymentData = {
           companyId: req.user.companyId,
@@ -81,10 +58,11 @@ module.exports = async function (fastify, opts) {
           method,
           referenceNo,
           date,
+          items,
           note
         }
 
-        const payment = await svc.recordPurchasePayment(fastify.prisma, paymentData)
+        const payment = await recordPurchasePayment(fastify.prisma, paymentData)
 
         return reply.code(201).send({
           statusCode: 201,

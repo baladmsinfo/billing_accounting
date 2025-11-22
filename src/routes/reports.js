@@ -128,6 +128,98 @@ module.exports = async function (fastify) {
         return { statusCode: '00', data: ledger }
     })
 
+    fastify.get('/profit-loss', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            tags: ['Reports'],
+            summary: 'Get Profit & Loss report',
+            querystring: {
+                type: 'object',
+                properties: {
+                    startDate: { type: 'string', format: 'date' },
+                    endDate: { type: 'string', format: 'date' }
+                }
+            }
+        }
+    }, async (req, reply) => {
+        try {
+            const { startDate, endDate } = req.query
+
+            const dateFilter =
+                startDate || endDate
+                    ? {
+                        gte: startDate ? new Date(startDate) : undefined,
+                        lte: endDate ? new Date(endDate) : undefined
+                    }
+                    : {}
+
+            const grouped = await fastify.prisma.journalEntry.groupBy({
+                by: ['accountId'],
+                where: {
+                    companyId: req.user.companyId,
+                    ...(startDate || endDate ? { date: dateFilter } : {})
+                },
+                _sum: { debit: true, credit: true }
+            })
+
+            const result = await Promise.all(
+                grouped.map(async (t) => {
+                    const account = await fastify.prisma.account.findUnique({
+                        where: { id: t.accountId },
+                        select: { id: true, name: true, type: true }
+                    })
+
+                    return {
+                        accountId: t.accountId,
+                        accountName: account?.name || 'Unknown',
+                        type: account?.type || 'OTHER',
+                        debit: t._sum.debit || 0,
+                        credit: t._sum.credit || 0,
+                        balance: (t._sum.credit || 0) - (t._sum.debit || 0)
+                    }
+                })
+            )
+
+            const income = result.filter(a => a.type === 'INCOME')
+            const expenses = result.filter(a => a.type === 'EXPENSE')
+
+            const totalIncome = income.reduce((s, a) => s + (a.credit - a.debit), 0)
+
+            const totalExpenses = expenses.reduce((s, a) => s + (a.debit - a.credit), 0)
+
+            const netProfit = totalIncome - totalExpenses
+
+            return {
+                statusCode: '00',
+                data: {
+                    period: {
+                        startDate: startDate || null,
+                        endDate: endDate || null
+                    },
+                    income: {
+                        accounts: income,
+                        total: totalIncome
+                    },
+                    expenses: {
+                        accounts: expenses,
+                        total: totalExpenses
+                    },
+                    summary: {
+                        netProfit,
+                        isProfit: netProfit >= 0
+                    }
+                }
+            }
+        } catch (err) {
+            req.log.error(err)
+            return reply.code(500).send({
+                statusCode: '99',
+                message: 'Failed to fetch Profit & Loss report',
+                error: err.message
+            })
+        }
+    })
+
     fastify.get('/trial-balance', {
         preHandler: [fastify.authenticate],
         schema: {

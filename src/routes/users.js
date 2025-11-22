@@ -5,38 +5,64 @@ const bcrypt = require('bcrypt');
 
 module.exports = async function (fastify, opts) {
 
-  fastify.post('/register', {
+fastify.post(
+  "/register",
+  {
     schema: {
-      tags: ['Auth'],
-      summary: 'Register a new user',
+      tags: ["Auth"],
+      summary: "Register a new user",
       body: {
-        type: 'object',
-        required: ['email', 'password', 'name', 'role'],
+        type: "object",
+        required: ["email", "password", "name", "role"],
         properties: {
-          email: { type: 'string', format: 'email', example: 'admin@example.com' },
-          password: { type: 'string', example: 'Admin@123' },
-          name: { type: 'string', example: 'Admin User' },
-          role: { type: 'string', enum: ['ADMIN', 'USER'], example: 'ADMIN' },
-          companyId: { type: 'string', nullable: true, example: null },
+          email: { type: "string", format: "email" },
+          password: { type: "string" },
+          name: { type: "string" },
+          role: { type: "string", enum: ["ADMIN", "USER"] },
+
+          companyId: { type: "string", nullable: true },
+
           company: {
-            type: 'object',
-            required: ['name', 'primaryPhoneNo', 'companyType', 'currencyId'],
+            type: "object",
+            nullable: true,
+            required: [
+              "name",
+              "primaryPhoneNo",
+              "companyType",
+              "currencyId",
+              "addressLine1",
+              "city",
+              "state",
+              "pincode"
+            ],
             properties: {
-              name: { type: 'string', example: 'My First Company' },
-              primaryPhoneNo: { type: 'string', example: '9876543210' },
-              companyType: { type: 'string', example: 'Private Limited' },
-              primaryEmail: { type: 'string', example: 'company@example.com' },
-              city: { type: 'string', example: 'City Name' },
-              state: { type: 'string', example: 'State Name' },
-              pincode: { type: 'integer', example: 123456 },
-              addressLine1: { type: 'string', example: 'Address Line 1' },
-              currencyId: { type: 'string', example: 'uuid-of-INR' }
-            }
-          }
-        }
-      }
-    }
-  }, async (request, reply) => {
+              name: { type: "string" },
+              gstNumber: { type: "string" },
+
+              primaryEmail: { type: "string" },
+              secondaryEmail: { type: "string" },
+
+              primaryPhoneNo: { type: "string" },
+              secondaryPhoneNo: { type: "string" },
+
+              addressLine1: { type: "string" },
+              addressLine2: { type: "string" },
+              addressLine3: { type: "string" },
+
+              city: { type: "string" },
+              state: { type: "string" },
+              pincode: { type: "integer" },
+
+              companyType: { type: "string" },
+
+              currencyId: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  },
+  async (request, reply) => {
     try {
       const {
         email,
@@ -44,65 +70,86 @@ module.exports = async function (fastify, opts) {
         name,
         role,
         companyId = null,
-        company: companyData
+        company: companyData,
       } = request.body;
 
       if (!email || !password || !name) {
-        return reply.code(400).send({
-          statusCode: 400,
-          message: 'Missing required fields'
+        return reply.send({
+          statusCode: "01",
+          message: "Missing required fields",
         });
       }
 
-      const existingUser = await fastify.prisma.user.findUnique({ where: { email } });
+      const existingUser = await fastify.prisma.user.findUnique({
+        where: { email },
+      });
+
       if (existingUser) {
-        return reply.code(400).send({
-          statusCode: 400,
-          message: 'Email already registered'
+        return reply.send({
+          statusCode: "02",
+          message: "Email already registered",
         });
       }
 
       let company;
 
-      if (companyId && companyId.trim() !== '') {
-        company = await fastify.prisma.company.findUnique({ where: { id: companyId } });
+      // CASE 1 
+      if (companyId && companyId.trim() !== "") {
+        company = await fastify.prisma.company.findUnique({
+          where: { id: companyId },
+        });
 
         if (!company) {
-          return reply.code(400).send({
-            statusCode: 400,
-            message: 'Company not found'
+          return reply.send({
+            statusCode: "03",
+            message: "Company not found",
           });
         }
-      } else {
+      }
+
+      // CASE 2 
+      else {
         if (!companyData || !companyData.currencyId) {
-          return reply.code(400).send({
-            statusCode: 400,
-            message: 'Company data with currencyId is required when companyId is not provided'
+          return reply.send({
+            statusCode: "01",
+            message:
+              "Company data with currencyId is required when companyId is not provided",
           });
         }
 
         const currency = await fastify.prisma.currency.findUnique({
-          where: { id: companyData.currencyId }
+          where: { id: companyData.currencyId },
         });
+
         if (!currency) {
-          return reply.code(400).send({
-            statusCode: 400,
-            message: 'Invalid currencyId provided'
+          return reply.send({
+            statusCode: "01",
+            message: "Invalid currencyId provided",
           });
         }
 
         company = await fastify.prisma.company.create({
           data: {
             name: companyData.name,
-            primaryPhoneNo: companyData.primaryPhoneNo,
-            companyType: companyData.companyType,
+            gstNumber: companyData.gstNumber || null,
+
             primaryEmail: companyData.primaryEmail || email,
-            city: companyData.city || '',
-            state: companyData.state || '',
-            pincode: companyData.pincode || 0,
-            addressLine1: companyData.addressLine1 || '',
-            currencyId: companyData.currencyId
-          }
+            secondaryEmail: companyData.secondaryEmail || null,
+
+            primaryPhoneNo: companyData.primaryPhoneNo,
+            secondaryPhoneNo: companyData.secondaryPhoneNo || null,
+
+            addressLine1: companyData.addressLine1,
+            addressLine2: companyData.addressLine2 || null,
+            addressLine3: companyData.addressLine3 || null,
+
+            city: companyData.city,
+            state: companyData.state,
+            pincode: companyData.pincode,
+
+            companyType: companyData.companyType,
+            currencyId: companyData.currencyId,
+          },
         });
       }
 
@@ -114,26 +161,29 @@ module.exports = async function (fastify, opts) {
           password: hashedPassword,
           name,
           role,
-          companyId: company.id
+          companyId: company.id,
         },
-        include: { company: true }
+        include: { company: true },
       });
 
-      return reply.code(200).send({
-        statusCode: 200,
-        message: 'User registered successfully',
-        data: user
+      return reply.send({
+        statusCode: "00",
+        message: "User registered successfully",
+        data: user,
       });
 
     } catch (err) {
       request.log.error(err);
-      return reply.code(500).send({
-        statusCode: 500,
-        message: 'Internal server error',
-        error: err.message
+
+      return reply.send({
+        statusCode: "99",
+        message: "Internal server error",
+        error: err.message,
       });
     }
-  });
+  }
+);
+
 
   // Old Register
 
@@ -246,6 +296,40 @@ module.exports = async function (fastify, opts) {
     }
   })
 
+  fastify.get('/currencies', {
+    schema: {
+      tags: ['Auth'],
+      summary: 'Fetch currency options for registration page'
+    }
+  }, async (request, reply) => {
+    try {
+      const currencies = await fastify.prisma.currency.findMany({
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          symbol: true,
+          country: true,
+        },
+      });
+
+      return reply.code(200).send({
+        statusCode: 200,
+        message: "Currencies fetched successfully",
+        data: currencies
+      });
+
+    } catch (err) {
+      request.log.error(err);
+      return reply.code(500).send({
+        statusCode: 500,
+        message: "Internal server error",
+        error: err.message
+      });
+    }
+  });
+
   // List Users
   fastify.get('/', {
     preHandler: [fastify.authenticate],
@@ -280,36 +364,6 @@ module.exports = async function (fastify, opts) {
       tags: ['Auth'],
       summary: 'Get currently authenticated user',
       security: [{ bearerAuth: [] }],
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            statusCode: { type: 'number', example: 200 },
-            message: { type: 'string', example: 'User fetched successfully' },
-            user: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                name: { type: 'string' },
-                email: { type: 'string' },
-                role: { type: 'string' },
-                companyId: { type: 'string' },
-                company: {
-                  type: 'object',
-                  nullable: true,
-                  properties: {
-                    id: { type: 'string' },
-                    name: { type: 'string' },
-                    primaryPhoneNo: { type: 'string' },
-                    companyType: { type: 'string' },
-                    primaryEmail: { type: 'string' },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
     },
   }, async (request, reply) => {
     try {

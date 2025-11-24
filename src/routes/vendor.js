@@ -1,13 +1,14 @@
 'use strict'
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
     // Create Vendor
     fastify.post(
         '/vendors',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Create a new vendor',
@@ -63,7 +64,7 @@ module.exports = async function (fastify, opts) {
     fastify.put(
         '/vendors/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Update vendor by ID',
@@ -106,7 +107,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Get all vendors (paginated)',
@@ -148,7 +149,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Get vendor by ID',
@@ -184,7 +185,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/vendors/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Delete vendor by ID',
@@ -220,7 +221,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors/search',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Search vendors with multiple filters',

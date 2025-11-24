@@ -1,5 +1,6 @@
 'use strict'
 const {createPayment, recordPurchasePayment} = require('../services/paymentServices')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
 
@@ -7,7 +8,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
     },
     async (req, reply) => {
       try {
@@ -45,7 +46,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/purchase',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
     },
     async (req, reply) => {
       try {
@@ -84,7 +85,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Payments'],
         summary: 'List all payments or filter by invoiceId',
@@ -127,7 +128,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Payments'],
         summary: 'Get payment by ID',
@@ -180,7 +181,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Payments'],
         summary: 'Delete payment',

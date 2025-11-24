@@ -2,6 +2,7 @@
 const userService = require('../services/userService')
 const { comparePassword } = require('../utils/hash')
 const bcrypt = require('bcrypt');
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
 
@@ -332,7 +333,7 @@ fastify.post(
 
   // List Users
   fastify.get('/', {
-    preHandler: [fastify.authenticate],
+    preHandler: checkRole("ADMIN"),
     schema: {
       tags: ['Auth'],
       summary: 'Get all users',
@@ -359,7 +360,7 @@ fastify.post(
 
   // Get current user
   fastify.get('/me', {
-    preHandler: [fastify.authenticate],
+    preHandler: checkRole("ADMIN"),
     schema: {
       tags: ['Auth'],
       summary: 'Get currently authenticated user',

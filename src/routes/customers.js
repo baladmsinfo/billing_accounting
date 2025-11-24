@@ -1,12 +1,13 @@
 'use strict'
 const svc = require('../services/customerService')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   // Create customer
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'Create a new customer',
@@ -53,7 +54,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'List customers (paginated)',
@@ -78,7 +79,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'Update an existing customer',
@@ -131,7 +132,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'Delete a customer',

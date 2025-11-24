@@ -1,12 +1,13 @@
 'use strict'
 const svc = require('../services/cartService')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
     // Add item to customer's cart
     fastify.post(
         '/:customerId/cart/items',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Add an item to a customer\'s active cart',
@@ -56,7 +57,7 @@ module.exports = async function (fastify, opts) {
         fastify.get(
         '/:customerId/carts',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Get all carts of a customer (with items)',
@@ -100,7 +101,7 @@ module.exports = async function (fastify, opts) {
     fastify.patch(
         '/:customerId/cart/items/:cartItemId/increment',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Increment quantity of a cart item by 1',
@@ -153,7 +154,7 @@ module.exports = async function (fastify, opts) {
     fastify.patch(
         '/:customerId/cart/items/:cartItemId/decrement',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Decrement quantity of a cart item by 1 (auto-delete if reaches 0)',
@@ -213,7 +214,7 @@ module.exports = async function (fastify, opts) {
     fastify.patch(
         '/:customerId/cart/items/:cartItemId',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Update quantity of an item in customer\'s cart',
@@ -275,7 +276,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/:customerId/cart/items/:cartItemId',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Delete an item from customer\'s cart',

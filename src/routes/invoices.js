@@ -1,12 +1,13 @@
 'use strict'
 const svc = require('../services/invoiceService')
 const { CartStatus } = require('@prisma/client')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Invoice'],
         summary: 'Create a new invoice',
@@ -96,7 +97,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/purchase',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Invoice'],
         summary: 'Create a new purchase invoice',
@@ -174,7 +175,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/:customerId/cart/checkout',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Cart'],
         summary: 'Checkout customer active cart and create an invoice',
@@ -362,18 +363,18 @@ module.exports = async function (fastify, opts) {
   })
 
   fastify.get('/:id', {
-    preHandler: [fastify.authenticate],
+    preHandler: checkRole("ADMIN"),
     schema: {
-      tags: ['Invoice'],
-      summary: 'Get invoice by ID with full details',
-      params: {
-        type: 'object',
-        required: ['id'],
-        properties: {
-          id: { type: 'string', format: 'uuid' },
-        },
+    tags: ['Invoice'],
+    summary: 'Get invoice by ID with full details',
+    params: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'string', format: 'uuid' },
       },
     },
+  },
   }, async (req, reply) => {
     try {
       const inv = await fastify.prisma.invoice.findUnique({
@@ -424,405 +425,405 @@ module.exports = async function (fastify, opts) {
     }
   });
 
-  fastify.put(
-    '/process/:id',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Invoice'],
-        summary: 'Update invoice item statuses and record timeline',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string', format: 'uuid' }
-          }
-        },
-        body: {
-          type: 'object',
-          properties: {
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                required: ['itemId', 'status'],
-                properties: {
-                  itemId: { type: 'string', format: 'uuid' },
-                  status: {
-                    type: 'string',
-                    enum: [
-                      'ORDERED',
-                      'PROCESSING',
-                      'SHIPPED',
-                      'DELIVERED',
-                      'CANCELLED',
-                      'RETURNED'
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    async (request, reply) => {
-      const { id } = request.params;
-      const { items } = request.body;
-      const userId = request.user.id;
-
-      try {
-        const invoice = await fastify.prisma.invoice.findUnique({
-          where: { id },
-          include: { items: true }
-        });
-
-        if (!invoice) {
-          return reply.code(404).send({
-            statusCode: 404,
-            message: 'Invoice not found'
-          });
-        }
-
-        const updatedItems = await fastify.prisma.$transaction(async (tx) => {
-          return Promise.all(
-            items.map(async ({ itemId, status }) => {
-              const existing = await tx.invoiceItem.findUnique({ where: { id: itemId } });
-              if (!existing) throw new Error(`Item not found: ${itemId}`);
-
-              const updatedItem = await tx.invoiceItem.update({
-                where: { id: itemId },
-                data: { status }
-              });
-
-              await tx.invoiceItemTimeline.create({
-                data: {
-                  invoiceItemId: itemId,
-                  oldStatus: existing.status,
-                  newStatus: status,
-                  userId,
-                  note: `Status changed from ${existing.status} to ${status}`
-                }
-              });
-
-              const item = await tx.item.findUnique({
-                where: { id: updatedItem.itemId }
-              });
-              if (!item) throw new Error(`Item not found: ${updatedItem.itemId}`);
-
-              const qty = updatedItem.quantity;
-
-              if (invoice.type === 'PURCHASE' && status === 'RETURNED') {
-                await tx.stockLedger.create({
-                  data: {
-                    companyId: invoice.companyId,
-                    itemId: updatedItem.itemId,
-                    type: 'ADJUSTMENT',
-                    quantity: -qty,
-                    note: `Purchase return - invoice ${invoice.invoiceNumber}`
-                  }
-                });
-
-                await tx.item.update({
-                  where: { id: updatedItem.itemId },
-                  data: { quantity: item.quantity - qty }
-                });
-              }
-
-              if (invoice.type === 'SALE' && status === 'RETURNED') {
-                await tx.stockLedger.create({
-                  data: {
-                    companyId: invoice.companyId,
-                    itemId: updatedItem.itemId,
-                    type: 'SALE_RETURN',
-                    quantity: qty,
-                    note: `Sale return - invoice ${invoice.invoiceNumber}`
-                  }
-                });
-
-                await tx.item.update({
-                  where: { id: updatedItem.itemId },
-                  data: { quantity: item.quantity + qty }
-                });
-              }
-
-              if (invoice.type === 'SALE' && status === 'CANCELLED') {
-                await tx.stockLedger.create({
-                  data: {
-                    companyId: invoice.companyId,
-                    itemId: updatedItem.itemId,
-                    type: 'ADJUSTMENT',
-                    quantity: qty,
-                    note: `Sale cancelled - invoice ${invoice.invoiceNumber}`
-                  }
-                });
-
-                await tx.item.update({
-                  where: { id: updatedItem.itemId },
-                  data: { quantity: item.quantity + qty }
-                });
-              }
-
-              if (status === 'DELIVERED' && invoice.type === 'PURCHASE') {
-                await tx.stockLedger.create({
-                  data: {
-                    companyId: invoice.companyId,
-                    itemId: updatedItem.itemId,
-                    type: 'PURCHASE',
-                    quantity: qty,
-                    note: `Purchase - invoice ${invoice.invoiceNumber}`
-                  }
-                });
-
-                await tx.item.update({
-                  where: { id: updatedItem.itemId },
-                  data: { quantity: item.quantity + qty }
-                });
-              }
-
-              return updatedItem;
-            })
-          );
-        });
-
-        return reply.code(200).send({
-          statusCode: 200,
-          message: 'Invoice items updated successfully',
-          data: updatedItems
-        });
-      } catch (error) {
-        fastify.log.error(error);
-        return reply.code(500).send({
-          statusCode: 500,
-          message: error.message
-        });
-      }
-    }
-  );
-
-  fastify.get('/item/:id/timeline', {
-    preHandler: [fastify.authenticate],
+fastify.put(
+  '/process/:id',
+  {
+    preHandler: checkRole("ADMIN"),
     schema: {
       tags: ['Invoice'],
-      summary: 'Fetch timeline for an invoice item',
+      summary: 'Update invoice item statuses and record timeline',
       params: {
         type: 'object',
         required: ['id'],
         properties: {
           id: { type: 'string', format: 'uuid' }
         }
-      }
-    }
-  }, async (req, reply) => {
-    const { id } = req.params;
-
-    try {
-      const events = await fastify.prisma.invoiceItemTimeline.findMany({
-        where: { invoiceItemId: id },
-        orderBy: { changedAt: 'asc' },
-        include: {
-          user: {
-            select: {
-              name: true,
-              email: true
+      },
+      body: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['itemId', 'status'],
+              properties: {
+                itemId: { type: 'string', format: 'uuid' },
+                status: {
+                  type: 'string',
+                  enum: [
+                    'ORDERED',
+                    'PROCESSING',
+                    'SHIPPED',
+                    'DELIVERED',
+                    'CANCELLED',
+                    'RETURNED'
+                  ]
+                }
+              }
             }
           }
         }
+      }
+    }
+  },
+  async (request, reply) => {
+    const { id } = request.params;
+    const { items } = request.body;
+    const userId = request.user.id;
+
+    try {
+      const invoice = await fastify.prisma.invoice.findUnique({
+        where: { id },
+        include: { items: true }
       });
 
-      return reply.send({
+      if (!invoice) {
+        return reply.code(404).send({
+          statusCode: 404,
+          message: 'Invoice not found'
+        });
+      }
+
+      const updatedItems = await fastify.prisma.$transaction(async (tx) => {
+        return Promise.all(
+          items.map(async ({ itemId, status }) => {
+            const existing = await tx.invoiceItem.findUnique({ where: { id: itemId } });
+            if (!existing) throw new Error(`Item not found: ${itemId}`);
+
+            const updatedItem = await tx.invoiceItem.update({
+              where: { id: itemId },
+              data: { status }
+            });
+
+            await tx.invoiceItemTimeline.create({
+              data: {
+                invoiceItemId: itemId,
+                oldStatus: existing.status,
+                newStatus: status,
+                userId,
+                note: `Status changed from ${existing.status} to ${status}`
+              }
+            });
+
+            const item = await tx.item.findUnique({
+              where: { id: updatedItem.itemId }
+            });
+            if (!item) throw new Error(`Item not found: ${updatedItem.itemId}`);
+
+            const qty = updatedItem.quantity;
+
+            if (invoice.type === 'PURCHASE' && status === 'RETURNED') {
+              await tx.stockLedger.create({
+                data: {
+                  companyId: invoice.companyId,
+                  itemId: updatedItem.itemId,
+                  type: 'ADJUSTMENT',
+                  quantity: -qty,
+                  note: `Purchase return - invoice ${invoice.invoiceNumber}`
+                }
+              });
+
+              await tx.item.update({
+                where: { id: updatedItem.itemId },
+                data: { quantity: item.quantity - qty }
+              });
+            }
+
+            if (invoice.type === 'SALE' && status === 'RETURNED') {
+              await tx.stockLedger.create({
+                data: {
+                  companyId: invoice.companyId,
+                  itemId: updatedItem.itemId,
+                  type: 'SALE_RETURN',
+                  quantity: qty,
+                  note: `Sale return - invoice ${invoice.invoiceNumber}`
+                }
+              });
+
+              await tx.item.update({
+                where: { id: updatedItem.itemId },
+                data: { quantity: item.quantity + qty }
+              });
+            }
+
+            if (invoice.type === 'SALE' && status === 'CANCELLED') {
+              await tx.stockLedger.create({
+                data: {
+                  companyId: invoice.companyId,
+                  itemId: updatedItem.itemId,
+                  type: 'ADJUSTMENT',
+                  quantity: qty,
+                  note: `Sale cancelled - invoice ${invoice.invoiceNumber}`
+                }
+              });
+
+              await tx.item.update({
+                where: { id: updatedItem.itemId },
+                data: { quantity: item.quantity + qty }
+              });
+            }
+
+            if (status === 'DELIVERED' && invoice.type === 'PURCHASE') {
+              await tx.stockLedger.create({
+                data: {
+                  companyId: invoice.companyId,
+                  itemId: updatedItem.itemId,
+                  type: 'PURCHASE',
+                  quantity: qty,
+                  note: `Purchase - invoice ${invoice.invoiceNumber}`
+                }
+              });
+
+              await tx.item.update({
+                where: { id: updatedItem.itemId },
+                data: { quantity: item.quantity + qty }
+              });
+            }
+
+            return updatedItem;
+          })
+        );
+      });
+
+      return reply.code(200).send({
         statusCode: 200,
-        message: 'Timeline fetched successfully',
-        data: events
+        message: 'Invoice items updated successfully',
+        data: updatedItems
       });
     } catch (error) {
       fastify.log.error(error);
       return reply.code(500).send({
         statusCode: 500,
-        message: 'Failed to fetch item timeline',
-        error: error.message
+        message: error.message
       });
     }
-  });
+  }
+);
 
-  fastify.delete(
-    '/:id',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Invoice'],
-        summary: 'Delete invoice by ID',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string', format: 'uuid', example: 'a1b2c3d4-5678-90ab-cdef-1234567890ab' }
-          }
-        }
-      }
-    },
-    async (request, reply) => {
-      const { id } = request.params
-
-      try {
-        const invoice = await fastify.prisma.invoice.findUnique({
-          where: { id },
-          include: { items: true }
-        })
-
-        if (!invoice) {
-          return reply.code(404).send({
-            statusCode: 404,
-            message: 'Invoice not found'
-          })
-        }
-
-        await fastify.prisma.$transaction(async (tx) => {
-          for (const it of invoice.items) {
-            const item = await tx.item.findUnique({ where: { id: it.itemId } })
-            if (item) {
-              await tx.item.update({
-                where: { id: it.itemId },
-                data: { quantity: item.quantity + it.quantity }
-              })
-
-              await tx.stockLedger.create({
-                data: {
-                  companyId: invoice.companyId,
-                  itemId: it.itemId,
-                  type: 'SALE_RETURN',
-                  quantity: it.quantity,
-                  note: `Invoice ${invoice.invoiceNumber} deleted`
-                }
-              })
-            }
-
-            await tx.invoiceItem.delete({ where: { id: it.id } })
-          }
-
-          await tx.invoice.delete({ where: { id } })
-        })
-
-        return reply.code(200).send({
-          statusCode: 200,
-          message: 'Invoice deleted successfully'
-        })
-      } catch (error) {
-        fastify.log.error(error)
-        return reply.code(500).send({
-          statusCode: 500,
-          message: 'Failed to delete invoice',
-          error: error.message
-        })
+fastify.get('/item/:id/timeline', {
+  preHandler: checkRole("ADMIN"),
+  schema: {
+    tags: ['Invoice'],
+    summary: 'Fetch timeline for an invoice item',
+    params: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'string', format: 'uuid' }
       }
     }
-  )
+  }
+}, async (req, reply) => {
+  const { id } = req.params;
 
-  fastify.get(
-    '/',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Invoice'],
-        summary: 'Get company invoices separated by type with optional date and status filters, with pagination',
-        querystring: {
-          type: 'object',
-          properties: {
-            status: {
-              type: 'string',
-              enum: ['PENDING', 'PARTIAL', 'PAYLATER', 'PAID', 'CANCELLED'],
-              nullable: true
-            },
-            from: { type: 'string', format: 'date-time', nullable: true },
-            to: { type: 'string', format: 'date-time', nullable: true },
-            page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 100, default: 10 }
+  try {
+    const events = await fastify.prisma.invoiceItemTimeline.findMany({
+      where: { invoiceItemId: id },
+      orderBy: { changedAt: 'asc' },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true
           }
         }
       }
-    },
-    async (request, reply) => {
-      try {
-        const { status, from, to, page = 1, limit = 10 } = request.query
-        const companyId = request.user.companyId
+    });
 
-        // Base filters
-        const baseFilters = { companyId }
-        if (status) baseFilters.status = status
-        if (from || to) baseFilters.date = {}
-        if (from) baseFilters.date.gte = new Date(from)
-        if (to) baseFilters.date.lte = new Date(to)
+    return reply.send({
+      statusCode: 200,
+      message: 'Timeline fetched successfully',
+      data: events
+    });
+  } catch (error) {
+    fastify.log.error(error);
+    return reply.code(500).send({
+      statusCode: 500,
+      message: 'Failed to fetch item timeline',
+      error: error.message
+    });
+  }
+});
 
-        const skip = (page - 1) * limit
-
-        // SALE invoices
-        const [saleInvoices, saleTotal] = await Promise.all([
-          fastify.prisma.invoice.findMany({
-            where: { ...baseFilters, type: 'SALE' },
-            include: {
-              customer: true,
-              items: { include: { product: true, taxRate: true } },
-              payments: true
-            },
-            orderBy: { date: 'desc' },
-            skip,
-            take: limit
-          }),
-          fastify.prisma.invoice.count({
-            where: { ...baseFilters, type: 'SALE' }
-          })
-        ])
-
-        // PURCHASE invoices
-        const [purchaseInvoices, purchaseTotal] = await Promise.all([
-          fastify.prisma.invoice.findMany({
-            where: { ...baseFilters, type: 'PURCHASE' },
-            include: {
-              vendor: true,
-              items: { include: { product: true, taxRate: true } },
-              payments: true
-            },
-            orderBy: { date: 'desc' },
-            skip,
-            take: limit
-          }),
-          fastify.prisma.invoice.count({
-            where: { ...baseFilters, type: 'PURCHASE' }
-          })
-        ])
-
-        reply.code(200).send({
-          statusCode: 200,
-          message: 'Invoices fetched successfully',
-          data: {
-            sale: {
-              invoices: saleInvoices,
-              pagination: {
-                total: saleTotal,
-                page,
-                limit,
-                totalPages: Math.ceil(saleTotal / limit)
-              }
-            },
-            purchase: {
-              invoices: purchaseInvoices,
-              pagination: {
-                total: purchaseTotal,
-                page,
-                limit,
-                totalPages: Math.ceil(purchaseTotal / limit)
-              }
-            }
-          }
-        })
-      } catch (error) {
-        fastify.log.error(error)
-        reply.code(500).send({
-          statusCode: 500,
-          message: 'Failed to fetch invoices',
-          error: error.message
-        })
+fastify.delete(
+  '/:id',
+  {
+    preHandler: checkRole("ADMIN"),
+    schema: {
+      tags: ['Invoice'],
+      summary: 'Delete invoice by ID',
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', format: 'uuid', example: 'a1b2c3d4-5678-90ab-cdef-1234567890ab' }
+        }
       }
     }
-  )
+  },
+  async (request, reply) => {
+    const { id } = request.params
+
+    try {
+      const invoice = await fastify.prisma.invoice.findUnique({
+        where: { id },
+        include: { items: true }
+      })
+
+      if (!invoice) {
+        return reply.code(404).send({
+          statusCode: 404,
+          message: 'Invoice not found'
+        })
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        for (const it of invoice.items) {
+          const item = await tx.item.findUnique({ where: { id: it.itemId } })
+          if (item) {
+            await tx.item.update({
+              where: { id: it.itemId },
+              data: { quantity: item.quantity + it.quantity }
+            })
+
+            await tx.stockLedger.create({
+              data: {
+                companyId: invoice.companyId,
+                itemId: it.itemId,
+                type: 'SALE_RETURN',
+                quantity: it.quantity,
+                note: `Invoice ${invoice.invoiceNumber} deleted`
+              }
+            })
+          }
+
+          await tx.invoiceItem.delete({ where: { id: it.id } })
+        }
+
+        await tx.invoice.delete({ where: { id } })
+      })
+
+      return reply.code(200).send({
+        statusCode: 200,
+        message: 'Invoice deleted successfully'
+      })
+    } catch (error) {
+      fastify.log.error(error)
+      return reply.code(500).send({
+        statusCode: 500,
+        message: 'Failed to delete invoice',
+        error: error.message
+      })
+    }
+  }
+)
+
+fastify.get(
+  '/',
+  {
+    preHandler: checkRole("ADMIN"),
+    schema: {
+      tags: ['Invoice'],
+      summary: 'Get company invoices separated by type with optional date and status filters, with pagination',
+      querystring: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['PENDING', 'PARTIAL', 'PAYLATER', 'PAID', 'CANCELLED'],
+            nullable: true
+          },
+          from: { type: 'string', format: 'date-time', nullable: true },
+          to: { type: 'string', format: 'date-time', nullable: true },
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 10 }
+        }
+      }
+    }
+  },
+  async (request, reply) => {
+    try {
+      const { status, from, to, page = 1, limit = 10 } = request.query
+      const companyId = request.user.companyId
+
+      // Base filters
+      const baseFilters = { companyId }
+      if (status) baseFilters.status = status
+      if (from || to) baseFilters.date = {}
+      if (from) baseFilters.date.gte = new Date(from)
+      if (to) baseFilters.date.lte = new Date(to)
+
+      const skip = (page - 1) * limit
+
+      // SALE invoices
+      const [saleInvoices, saleTotal] = await Promise.all([
+        fastify.prisma.invoice.findMany({
+          where: { ...baseFilters, type: 'SALE' },
+          include: {
+            customer: true,
+            items: { include: { product: true, taxRate: true } },
+            payments: true
+          },
+          orderBy: { date: 'desc' },
+          skip,
+          take: limit
+        }),
+        fastify.prisma.invoice.count({
+          where: { ...baseFilters, type: 'SALE' }
+        })
+      ])
+
+      // PURCHASE invoices
+      const [purchaseInvoices, purchaseTotal] = await Promise.all([
+        fastify.prisma.invoice.findMany({
+          where: { ...baseFilters, type: 'PURCHASE' },
+          include: {
+            vendor: true,
+            items: { include: { product: true, taxRate: true } },
+            payments: true
+          },
+          orderBy: { date: 'desc' },
+          skip,
+          take: limit
+        }),
+        fastify.prisma.invoice.count({
+          where: { ...baseFilters, type: 'PURCHASE' }
+        })
+      ])
+
+      reply.code(200).send({
+        statusCode: 200,
+        message: 'Invoices fetched successfully',
+        data: {
+          sale: {
+            invoices: saleInvoices,
+            pagination: {
+              total: saleTotal,
+              page,
+              limit,
+              totalPages: Math.ceil(saleTotal / limit)
+            }
+          },
+          purchase: {
+            invoices: purchaseInvoices,
+            pagination: {
+              total: purchaseTotal,
+              page,
+              limit,
+              totalPages: Math.ceil(purchaseTotal / limit)
+            }
+          }
+        }
+      })
+    } catch (error) {
+      fastify.log.error(error)
+      reply.code(500).send({
+        statusCode: 500,
+        message: 'Failed to fetch invoices',
+        error: error.message
+      })
+    }
+  }
+)
 }

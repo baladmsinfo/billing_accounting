@@ -1,6 +1,7 @@
 'use strict'
 const svc = require('../services/itemService')
 const stockSvc = require('../services/stockService')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   /**
@@ -24,7 +25,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'Create a new item',
@@ -89,7 +90,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'List items with pagination',
@@ -134,7 +135,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'Update an existing item',
@@ -217,7 +218,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'Delete an item',

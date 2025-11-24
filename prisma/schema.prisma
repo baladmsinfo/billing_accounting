@@ -13,6 +13,11 @@ enum Role {
   SUPERADMIN
 }
 
+enum ProductType {
+  POS
+  BILLING
+}
+
 model User {
   id                String    @id @default(uuid())
   email             String    @unique
@@ -52,9 +57,10 @@ model Company {
   id               String       @id @default(uuid())
   name             String
   gstNumber        String?
-
+  privateapiKey    String?      @unique
+  publicapiKey     String?      @unique
+  productType      ProductType  @default(BILLING)
   users            User[]      
-
   branches         Branch[]
   accounts         Account[]
   journals         JournalEntry[]
@@ -193,6 +199,8 @@ model Payment {
 
   amount      Float
   method      PaymentMethod
+  gatewayPaymentId String?  @unique
+  rawResponse String?
   referenceNo String?     // e.g., UPI txn id, cheque no, etc.
   date        DateTime    @default(now())
   note        String?
@@ -237,6 +245,8 @@ model Customer {
   phone     String?
   gstin     String?
   companyId String
+  password  String?        // 👈 Add this
+
   company   Company   @relation(fields: [companyId], references: [id])
   invoices  Invoice[]
   carts     Cart[] 

@@ -6,7 +6,8 @@ async function authPlugin(fastify, opts) {
 
   fastify.decorate('authenticate', async function (request, reply) {
     try {
-      await request.jwtVerify()
+      let user = await request.jwtVerify()
+      console.log(user)
     } catch (err) {
       reply.code(401).send({ error: 'Unauthorized' })
     }

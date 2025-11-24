@@ -121,6 +121,31 @@ module.exports = async function (fastify, opts) {
     }
   )
 
+  fastify.get('/options',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const companyId = request.user.companyId
+
+        const accounts = await svc.listAccountsOptions(
+          fastify.prisma,
+          companyId
+        )
+
+        reply.code(200).send({
+          statusCode: 200,
+          data: accounts
+        })
+      } catch (error) {
+        reply.code(500).send({
+          statusCode: 500,
+          message: 'Failed to fetch accounts',
+          error: error.message
+        })
+      }
+    }
+  )
+
   // Get Journal Entries 
 
   fastify.get('/journals', {

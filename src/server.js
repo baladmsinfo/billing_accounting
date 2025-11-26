@@ -26,7 +26,15 @@ fastify.ready((err) => {
 
 
 fastify.after(async () => {
-  
+
+  const multipart = require("@fastify/multipart");
+
+    fastify.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5 MB
+    },
+  });
+
 
   const rateLimit = require('@fastify/rate-limit')
   fastify.register(rateLimit, {
@@ -64,6 +72,9 @@ fastify.after(async () => {
     }
   })
 
+  const uploadToSpacesPlugin = require("./plugins/uploadToSpaces");
+  fastify.register(uploadToSpacesPlugin);
+
   // Common plugins
   fastify.register(require('@fastify/helmet'))
   fastify.register(require('@fastify/cors'), {
@@ -94,6 +105,9 @@ fastify.after(async () => {
   fastify.register(require('./routes/taxRates'), { prefix: '/api/tax-rates' })
   fastify.register(require('./routes/stock'), { prefix: '/api/stock' })
   fastify.register(require('./routes/store'), { prefix: '/api/store' })
+  fastify.register(require("./routes/upload"));
+
+
 
   // Global error handler
   fastify.setErrorHandler((error, request, reply) => {
@@ -107,8 +121,8 @@ fastify.after(async () => {
 
   const start = async () => {
     try {
-      const port =  fastify.config.PORT || 8081
-      const host =  fastify.config.host || "0.0.0.0"
+      const port = fastify.config.PORT || 8081
+      const host = fastify.config.host || "0.0.0.0"
       await fastify.listen({ port, host: host })
       fastify.log.info(`Server listening on http://${host}:${port}`)
     } catch (err) {

@@ -19,96 +19,96 @@ enum ProductType {
 }
 
 model User {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  password          String
-  name              String
-  role              Role      @default(USER)
-  status            Boolean   @default(false)
-  mobile_verifited  Boolean   @default(false)
-  email_verifited   Boolean   @default(false)
-  invited           Boolean   @default(false)
-  inviteToken       String?
-  inviteTokenExpiry DateTime?
+  id                   String                @id @default(uuid())
+  email                String                @unique
+  password             String
+  name                 String
+  role                 Role                  @default(USER)
+  status               Boolean               @default(false)
+  mobile_verifited     Boolean               @default(false)
+  email_verifited      Boolean               @default(false)
+  invited              Boolean               @default(false)
+  inviteToken          String?
+  inviteTokenExpiry    DateTime?
   invoiceItemTimelines InvoiceItemTimeline[]
 
-  companyId         String?    // 👈 Add this field
-  company           Company?   @relation(fields: [companyId], references: [id])
+  companyId String? // 👈 Add this field
+  company   Company? @relation(fields: [companyId], references: [id])
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Currency {
-  id          String     @id @default(uuid())
-  code        String     @unique        
-  name        String                    
-  symbol      String                    
-  country     String                    
-  isDefault   Boolean     @default(true)
+  id        String  @id @default(uuid())
+  code      String  @unique
+  name      String
+  symbol    String
+  country   String
+  isDefault Boolean @default(true)
 
-  companies   Company[]                  
+  companies Company[]
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Company {
-  id               String       @id @default(uuid())
-  name             String
-  gstNumber        String?
-  privateapiKey    String?      @unique
-  publicapiKey     String?      @unique
-  productType      ProductType  @default(BILLING)
-  users            User[]      
-  branches         Branch[]
-  accounts         Account[]
-  journals         JournalEntry[]
-  invoices         Invoice[]
-  products         Product[]
-  items            Item[]
-  customers        Customer[]
-  taxRates         TaxRate[]
-  payments         Payment[]
-  stock            StockLedger[]
-  categories       Category[]
-  invoiceTax       InvoiceTax[]
-  vendors          Vendor[]
-  carts            Cart[]
+  id            String         @id @default(uuid())
+  name          String
+  gstNumber     String?
+  privateapiKey String?        @unique
+  publicapiKey  String?        @unique
+  productType   ProductType    @default(BILLING)
+  users         User[]
+  branches      Branch[]
+  accounts      Account[]
+  journals      JournalEntry[]
+  invoices      Invoice[]
+  products      Product[]
+  items         Item[]
+  customers     Customer[]
+  taxRates      TaxRate[]
+  payments      Payment[]
+  stock         StockLedger[]
+  categories    Category[]
+  invoiceTax    InvoiceTax[]
+  vendors       Vendor[]
+  carts         Cart[]
 
   primaryEmail     String
   secondaryEmail   String?
   primaryPhoneNo   String
   secondaryPhoneNo String?
 
-  addressLine1     String
-  addressLine2     String?
-  addressLine3     String?
-  city             String
-  state            String
-  pincode          Int
-  companyType      String
+  addressLine1 String
+  addressLine2 String?
+  addressLine3 String?
+  city         String
+  state        String
+  pincode      Int
+  companyType  String
 
-  currencyId       String
-  currency         Currency   @relation(fields: [currencyId], references: [id])
+  currencyId String
+  currency   Currency @relation(fields: [currencyId], references: [id])
 
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Branch {
-  id          String   @id @default(uuid())
-  name        String
-  address     String?
-  city        String?
-  state       String?
-  pincode     Int?
+  id      String  @id @default(uuid())
+  name    String
+  address String?
+  city    String?
+  state   String?
+  pincode Int?
 
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Account {
@@ -148,65 +148,74 @@ model JournalEntry {
 }
 
 model Category {
-  id          String      @id @default(uuid())
-  name        String      
+  id          String   @id @default(uuid())
+  name        String
   description String?
 
-  companyId   String
-  company     Company     @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  parentId    String?
-  parent      Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children    Category[]  @relation("CategoryHierarchy")
+  parentId String?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
 
-  products    Product[]   @relation("ParentCategory")   // products under this as parent
-  subProducts Product[]   @relation("SubCategory")      // products under this as subcategory
+  products    Product[] @relation("ParentCategory")
+  subProducts Product[] @relation("SubCategory")
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  /// One image per Category (optional)
+  imageID  String?          @unique @map("image_id")
+  image    Images?          @relation(fields: [imageID], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
 }
 
+
 model Product {
-  id             String        @id @default(uuid())
-  name           String
-  sku            String        @unique
-  description    String?
+  id          String  @id @default(uuid())
+  name        String
+  sku         String  @unique
+  description String?
 
-  companyId      String
-  company        Company       @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  categoryId     String?       // Parent category
-  category       Category?     @relation("ParentCategory", fields: [categoryId], references: [id])
+  categoryId String? // Parent category
+  category   Category? @relation("ParentCategory", fields: [categoryId], references: [id])
 
-  subCategoryId  String?       // Child category
-  subCategory    Category?     @relation("SubCategory", fields: [subCategoryId], references: [id])
+  subCategoryId String? // Child category
+  subCategory   Category? @relation("SubCategory", fields: [subCategoryId], references: [id])
 
-  items          Item[]
-  invoiceItems   InvoiceItem[]
-  cartItems      CartItem[]
+  items        Item[]
+  invoiceItems InvoiceItem[]
+  cartItems    CartItem[]
 
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  images  Images[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {
-  id          String      @id @default(uuid())
-  companyId   String
-  company     Company     @relation(fields: [companyId], references: [id])
+  id        String  @id @default(uuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  invoiceId   String
-  invoice     Invoice     @relation(fields: [invoiceId], references: [id])
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
 
-  amount      Float
-  method      PaymentMethod
-  gatewayPaymentId String?  @unique
-  rawResponse String?
-  referenceNo String?     // e.g., UPI txn id, cheque no, etc.
-  date        DateTime    @default(now())
-  note        String?
+  amount           Float
+  method           PaymentMethod
+  gatewayPaymentId String?       @unique
+  rawResponse      String?
+  referenceNo      String? // e.g., UPI txn id, cheque no, etc.
+  date             DateTime      @default(now())
+  note             String?
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum PaymentMethod {
@@ -239,17 +248,17 @@ model Item {
 }
 
 model Customer {
-  id        String    @id @default(uuid())
+  id        String  @id @default(uuid())
   name      String
   email     String?
   phone     String?
   gstin     String?
   companyId String
-  password  String?        // 👈 Add this
+  password  String? // 👈 Add this
 
   company   Company   @relation(fields: [companyId], references: [id])
   invoices  Invoice[]
-  carts     Cart[] 
+  carts     Cart[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -262,16 +271,16 @@ enum InvoiceType {
 }
 
 model Cart {
-  id         String      @id @default(uuid())
+  id         String     @id @default(uuid())
   companyId  String
-  company    Company     @relation(fields: [companyId], references: [id])
+  company    Company    @relation(fields: [companyId], references: [id])
   customerId String
-  customer   Customer    @relation(fields: [customerId], references: [id])
-  status     CartStatus  @default(ACTIVE)
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  status     CartStatus @default(ACTIVE)
   items      CartItem[]
 
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum CartStatus {
@@ -312,29 +321,29 @@ model Vendor {
 }
 
 model Invoice {
-  id            String        @id @default(uuid())
+  id            String  @id @default(uuid())
   invoiceNumber String
   companyId     String
-  company       Company       @relation(fields: [companyId], references: [id])
-  
+  company       Company @relation(fields: [companyId], references: [id])
+
   // Either Customer (SALE) or Vendor (PURCHASE)
-  customerId    String?
-  customer      Customer?     @relation(fields: [customerId], references: [id])
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
 
-  vendorId      String?
-  vendor        Vendor?       @relation(fields: [vendorId], references: [id])
+  vendorId String?
+  vendor   Vendor? @relation(fields: [vendorId], references: [id])
 
-  date          DateTime
-  dueDate       DateTime?
-  status        InvoiceStatus @default(PENDING)
-  type          InvoiceType   @default(SALE)
-  items         InvoiceItem[]
-  payments      Payment[]
-  invoiceTax    InvoiceTax[]
-  totalAmount   Float
-  taxAmount     Float
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  date        DateTime
+  dueDate     DateTime?
+  status      InvoiceStatus @default(PENDING)
+  type        InvoiceType   @default(SALE)
+  items       InvoiceItem[]
+  payments    Payment[]
+  invoiceTax  InvoiceTax[]
+  totalAmount Float
+  taxAmount   Float
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 }
 
 enum InvoiceStatus {
@@ -360,21 +369,21 @@ model InvoiceTax {
 }
 
 model InvoiceItem {
-  id        String   @id @default(uuid())
-  invoiceId String
-  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
-  itemId    String
-  item      Item     @relation(fields: [itemId], references: [id])
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int
-  price     Float
-  status    InvoiceItemStatus  @default(ORDERED)
-  taxRateId String?
-  timelines InvoiceItemTimeline[]
-  taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
-  total     Float
-  paidAmount Float @default(0)
+  id         String                @id @default(uuid())
+  invoiceId  String
+  invoice    Invoice               @relation(fields: [invoiceId], references: [id])
+  itemId     String
+  item       Item                  @relation(fields: [itemId], references: [id])
+  productId  String
+  product    Product               @relation(fields: [productId], references: [id])
+  quantity   Int
+  price      Float
+  status     InvoiceItemStatus     @default(ORDERED)
+  taxRateId  String?
+  timelines  InvoiceItemTimeline[]
+  taxRate    TaxRate?              @relation(fields: [taxRateId], references: [id])
+  total      Float
+  paidAmount Float                 @default(0)
 }
 
 enum InvoiceItemStatus {
@@ -387,30 +396,31 @@ enum InvoiceItemStatus {
 }
 
 model InvoiceItemTimeline {
-  id          String   @id @default(uuid())
+  id            String      @id @default(uuid())
   invoiceItemId String
-  oldStatus   String?
-  newStatus   String
-  changedAt   DateTime @default(now())
-  note        String?
-  userId      String?
-  invoiceItem InvoiceItem @relation(fields: [invoiceItemId], references: [id])
-  user        User?       @relation(fields: [userId], references: [id])
+  oldStatus     String?
+  newStatus     String
+  changedAt     DateTime    @default(now())
+  note          String?
+  userId        String?
+  invoiceItem   InvoiceItem @relation(fields: [invoiceItemId], references: [id])
+  user          User?       @relation(fields: [userId], references: [id])
+
   @@index([invoiceItemId])
 }
 
 model TaxRate {
-  id        String        @id @default(uuid())
-  name      String
-  rate      Float
-  type      TaxType
-  companyId String
-  company   Company       @relation(fields: [companyId], references: [id])
-  items     InvoiceItem[]
-  invoiceTax    InvoiceTax[]
-  cartItems    CartItem[]
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id         String        @id @default(uuid())
+  name       String
+  rate       Float
+  type       TaxType
+  companyId  String
+  company    Company       @relation(fields: [companyId], references: [id])
+  items      InvoiceItem[]
+  invoiceTax InvoiceTax[]
+  cartItems  CartItem[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 }
 
 enum TaxType {
@@ -430,8 +440,8 @@ model StockLedger {
   type      StockTxnType
   quantity  Int
   note      String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 }
 
 enum StockTxnType {
@@ -439,4 +449,25 @@ enum StockTxnType {
   SALE
   SALE_RETURN
   ADJUSTMENT
+}
+
+model Images {
+  id         String    @id @default(uuid())
+  url        String
+  key        String?
+  docid      Int?
+  filename   String?
+  mimetype   String?
+  size       Int?
+
+  /// Image may belong to ONE category
+  category   Category?
+
+  /// Still supports product images (optional)
+  productId    String?
+  product      Product? @relation(fields: [productId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("images")
 }

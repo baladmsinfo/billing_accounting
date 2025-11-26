@@ -1,12 +1,13 @@
 'use strict'
 const productSvc = require('../services/productService')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   // Create product
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Create a new product with items and initial stock',
@@ -108,7 +109,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Product'],
         description: 'List products with pagination',
@@ -157,7 +158,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/category/subcategory',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Category'],
         description: 'Fetch all categories and subcategories for the current company'
@@ -195,7 +196,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Get product by ID including items',
@@ -244,7 +245,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Update product and items (add/update items and stock)',
@@ -389,7 +390,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/:productId/items',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Add a new item/variant to an existing product',
@@ -480,7 +481,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/item/:itemId/price',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
     },
     async (request, reply) => {
       try {
@@ -527,7 +528,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Delete a product by ID',

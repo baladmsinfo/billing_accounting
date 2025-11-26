@@ -1,10 +1,11 @@
 'use strict'
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
     fastify.post(
         '/',
         {
-            preHandler: [fastify.authenticate]
+            preHandler: checkRole("ADMIN"),
         },
         async (request, reply) => {
             try {
@@ -63,7 +64,7 @@ module.exports = async function (fastify, opts) {
     fastify.post(
         '/:parentId/subcategory',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
         },
         async (request, reply) => {
             try {
@@ -111,7 +112,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Category'],
                 description: 'List categories with pagination',
@@ -157,7 +158,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Category'],
                 description: 'Get category by ID including children',
@@ -204,7 +205,7 @@ module.exports = async function (fastify, opts) {
     fastify.put(
         '/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Category'],
                 description: 'Update category and its children',
@@ -303,7 +304,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Category'],
                 description: 'Delete a category by ID',

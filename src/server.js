@@ -87,6 +87,91 @@ fastify.after(async () => {
   fastify.register(require('./plugins/prisma'))
   fastify.register(require('./plugins/auth'))
 
+  fastify.addHook("preHandler", async (req, reply) => {
+    let publicPaths;
+    if (fastify.config.ENV === "development") {
+      publicPaths = [
+        "/api/users/login",
+        "/api/users/send-otp",
+        "/api/users/verify-otp",
+        "/api/users/register",
+      ];
+    } else {
+      publicPaths = [
+        "/api/users/login",
+        "/api/users/send-otp",
+        "/api/users/forgotpassword",
+        "/api/users/setpassword",
+        "/api/users/verify-otp",
+        "/api/users/register",
+        "/images",
+      ];
+    }
+
+    if (publicPaths.some((path) => req.raw.url.startsWith(path))) {
+      return;
+    }
+
+    try {
+      const apiKey = req.headers["x-api-key"];
+      const bearer = req.headers["authorization"]?.split(" ")[1];
+
+      if (apiKey) {
+        const company = await fastify.prisma.company.findUnique({
+          where: { privateapiKey: apiKey },
+          include: {
+            users: true,
+            currency: true,
+          },
+        });
+
+        req.log.info(`Accessed ${req.raw.url} using API Key`);
+
+        if (!company) {
+          return reply.code(403).send({ error: "Invalid API Key" });
+        }
+
+        req.company = company;
+        req.companyId = company.id;
+        req.role = "ADMIN";
+        req.user = null;
+
+        return; 
+      }
+
+      if (bearer) {
+        try {
+          // ✅ JWT logic (User/Admin)
+          const decoded = fastify.jwt.verify(bearer);
+          console.log(decoded);
+          req.user = decoded;
+          req.role = decoded.role;
+
+          if (req.role === "ADMIN") {
+            req.companyId = decoded.companyId;
+          }
+
+          req.log.info(
+            `Accessed ${req.raw.url} by ${req.headers["token"] || "MID- " + req.merchantId
+            }`
+          );
+
+          return;
+        } catch (err) {
+          return reply.code(401).send({ error: "Invalid token" });
+        }
+      }
+      return reply.code(401).send({
+        statusCode: "05",
+        message: "Missing Authorization or API Key",
+      });
+    } catch (err) {
+      return reply
+        .code(401)
+        .send({ statusCode: "05", message: "Unauthorized" });
+    }
+  });
+
   // Routes
   fastify.register(require('./routes/users'), { prefix: '/api/users' })
   fastify.register(require('./routes/account'), { prefix: '/api/account' })

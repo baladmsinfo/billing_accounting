@@ -1,5 +1,6 @@
 'use strict'
 const svc = require('../services/taxRateService')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   // JSON Schemas
@@ -18,7 +19,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Add Tax Rate',
@@ -50,7 +51,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Get Tax Rate',
@@ -79,7 +80,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Update Tax Rate',
@@ -123,7 +124,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Delete a Tax Rate',

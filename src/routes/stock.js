@@ -1,12 +1,13 @@
 'use strict'
 const svc = require('../services/stockService')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   // Record stock entry
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Stock'],
         summary: 'Record a stock entry',
@@ -47,7 +48,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Stock'],
         summary: 'Get stock ledger entries with pagination',

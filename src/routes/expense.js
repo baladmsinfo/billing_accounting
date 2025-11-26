@@ -1,4 +1,5 @@
 'use strict'
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
 
@@ -26,7 +27,7 @@ module.exports = async function (fastify, opts) {
     fastify.post(
         '/',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
         },
 
         async (request, reply) => {
@@ -108,7 +109,7 @@ module.exports = async function (fastify, opts) {
     )
 
     fastify.get('/chart', {
-        preHandler: [fastify.authenticate],
+        preHandler: checkRole("ADMIN"),
         schema: {
             tags: ['Expense'],
             summary: 'Get expense summary for chart with period',
@@ -167,7 +168,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Get all expenses (from journal entries)',
@@ -235,7 +236,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/options',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Get all expense account options (excluding Purchases)',
@@ -304,7 +305,7 @@ module.exports = async function (fastify, opts) {
     fastify.put(
         '/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Update an expense',
@@ -373,7 +374,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/:id',
         {
-            preHandler: [fastify.authenticate],
+            preHandler: checkRole("ADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Delete an expense',

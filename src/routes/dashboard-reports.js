@@ -1,6 +1,6 @@
 // routes/dashboardReports.js
 'use strict'
-
+const checkRole = require('../utils/checkRole')
 const { startOfMonth, startOfQuarter, startOfYear, endOfMonth, endOfQuarter, endOfYear } = require('date-fns')
 
 module.exports = async function (fastify) {
@@ -20,7 +20,7 @@ module.exports = async function (fastify) {
     }
 
     fastify.get('/reports/dashboard/cashflow', {
-        preHandler: [fastify.authenticate],
+        preHandler: checkRole("ADMIN"),
         schema: {
             tags: ['Dashboard'],
             summary: 'Cashflow (Inflow vs Outflow, time-based)',
@@ -99,7 +99,7 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/reports/dashboard/profit-loss', {
-        preHandler: [fastify.authenticate],
+        preHandler: checkRole("ADMIN"),
         schema: {
             tags: ['Dashboard'],
             summary: 'Profit and Loss timeline graph',
@@ -176,7 +176,7 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/reports/dashboard/sales', {
-        preHandler: [fastify.authenticate],
+        preHandler: checkRole("ADMIN"),
         schema: {
             tags: ['Dashboard'],
             summary: 'Sales invoice paid/unpaid summary',
@@ -212,7 +212,7 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/reports/dashboard/purchases', {
-        preHandler: [fastify.authenticate],
+        preHandler: checkRole("ADMIN"),
         schema: {
             tags: ['Dashboard'],
             summary: 'Purchase invoice paid/unpaid summary',

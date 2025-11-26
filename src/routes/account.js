@@ -1,12 +1,13 @@
 'use strict'
 const svc = require('../services/accountServices')
+const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   // Create Account
   fastify.post(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Accounts'],
         summary: 'Create a new account for a company',
@@ -49,7 +50,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/type/:type',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ['Accounts'],
         summary: 'List accounts by type for a company',
@@ -95,7 +96,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
     },
     async (request, reply) => {
       try {
@@ -149,7 +150,7 @@ module.exports = async function (fastify, opts) {
   // Get Journal Entries 
 
   fastify.get('/journals', {
-    preHandler: [fastify.authenticate],
+    preHandler: checkRole("ADMIN"),
     schema: {
       tags: ['Journals'],
       summary: 'Get all journal entries with pagination and date filters',
@@ -215,7 +216,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     "/:id",
     {
-      preHandler: [fastify.authenticate],
+      preHandler: checkRole("ADMIN"),
       schema: {
         tags: ["Accounts"],
         summary: "Delete an account by ID",

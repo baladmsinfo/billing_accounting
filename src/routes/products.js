@@ -386,43 +386,19 @@ module.exports = async function (fastify, opts) {
     }
   )
 
-  // ➕ Add new item to an existing product
   fastify.post(
     '/:productId/items',
     {
       preHandler: checkRole("ADMIN"),
-      schema: {
-        tags: ['Product'],
-        description: 'Add a new item/variant to an existing product',
-        params: {
-          type: 'object',
-          required: ['productId'],
-          properties: {
-            productId: { type: 'string', example: 'clxyz12345' }
-          }
-        },
-        body: {
-          type: 'object',
-          required: ['sku', 'price', 'quantity', 'location'],
-          properties: {
-            sku: { type: 'string', example: 'LAP-001-BLUE' },
-            price: { type: 'number', example: 68000 },
-            quantity: { type: 'integer', example: 10 },
-            location: { type: 'string', example: 'Warehouse B' }
-          }
-        }
-      }
     },
     async (request, reply) => {
       try {
         const { productId } = request.params
-        const { sku, price, quantity, location } = request.body
+        const { sku, price, taxrate, quantity, location } = request.body
         const companyId = request.user.companyId
 
-        // Check product exists
         const product = await fastify.prisma.product.findFirst({
-          where: { id: productId, companyId },
-          include: { items: true }
+          where: { id: productId, companyId }
         })
 
         if (!product) {
@@ -432,7 +408,20 @@ module.exports = async function (fastify, opts) {
           })
         }
 
-        // Create new item
+        const tax = await fastify.prisma.taxRate.findFirst({
+          where: {
+            id: taxrate,
+            companyId
+          }
+        })
+
+        if (!tax) {
+          return reply.code(400).send({
+            statusCode: '01',
+            message: `Invalid taxrateId: ${taxrate}`
+          })
+        }
+
         const newItem = await fastify.prisma.item.create({
           data: {
             sku,
@@ -440,11 +429,13 @@ module.exports = async function (fastify, opts) {
             quantity,
             location,
             companyId,
-            productId
+            productId,
+            taxRates: {
+              connect: { id: taxrate }
+            }
           }
         })
 
-        // Add stock ledger entry if quantity > 0
         if (quantity > 0) {
           await fastify.prisma.stockLedger.create({
             data: {
@@ -467,6 +458,7 @@ module.exports = async function (fastify, opts) {
           message: 'Item added successfully',
           data: updatedProduct
         })
+
       } catch (error) {
         fastify.log.error(error)
         return reply.code(500).send({
@@ -477,6 +469,7 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
+
 
   fastify.put(
     '/item/:itemId/price',

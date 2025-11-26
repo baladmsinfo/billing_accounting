@@ -6,7 +6,7 @@ module.exports = async function (fastify, opts) {
 
   // Create Payment
   fastify.post(
-    '/',
+    "/",
     {
       preHandler: checkRole("ADMIN"),
     },

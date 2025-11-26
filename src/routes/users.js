@@ -1,6 +1,7 @@
 'use strict'
 const userService = require('../services/userService')
 const { comparePassword } = require('../utils/hash')
+const { generateApiKey } = require('../utils/keyGenerator')
 const bcrypt = require('bcrypt');
 const checkRole = require('../utils/checkRole')
 
@@ -150,6 +151,8 @@ fastify.post(
 
             companyType: companyData.companyType,
             currencyId: companyData.currencyId,
+            publicapikey: generateApiKey(),
+            privateapikey: generateApiKey()
           },
         });
       }
@@ -290,6 +293,7 @@ fastify.post(
           email: user.email,
           role: user.role,
           companyId: user.companyId,
+          company: user.company
         },
       })
     } catch (err) {

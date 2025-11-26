@@ -9,6 +9,10 @@ const {
     getCustomerCarts
 } = require("../services/cartService");
 
+const productSvc = require('../services/productService')
+
+const checkRole = require('../utils/checkRole')
+
 module.exports = async function (fastify) {
     const prisma = fastify.prisma;
 
@@ -16,23 +20,40 @@ module.exports = async function (fastify) {
     // 1. PRODUCT APIs
     // -------------------------------------------------------
 
-    fastify.get("/products", async (req) => {
-        const { companyId, search } = req.query;
-        return prisma.product.findMany({
-            where: {
-                companyId,
-                OR: search
-                    ? [
-                        { name: { contains: search, mode: "insensitive" } },
-                        { sku: { contains: search, mode: "insensitive" } }
-                    ]
-                    : undefined
-            },
-            include: { item: true }
-        });
+    fastify.get("/products", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req, reply) => {
+        try {
+            const page = Number(req.query.page || 1)
+            const take = Number(req.query.take || 20)
+            const skip = (page - 1) * take
+
+            const [products, total] = await Promise.all([
+                productSvc.listProducts(fastify.prisma, req.companyId, { skip, take }),
+                fastify.prisma.product.count({
+                    where: { companyId: req.companyId },
+                }),
+            ])
+
+            return reply.code(200).send({
+                statusCode: '00',
+                message: 'Products fetched successfully',
+                data: products,
+                pagination: { page, take, total },
+            })
+        } catch (error) {
+            fastify.log.error(error)
+            return reply.code(500).send({
+                statusCode: '99',
+                message: 'Failed to fetch products',
+                error: error.message,
+            })
+        }
     });
 
-    fastify.get("/product/:id", async (req) => {
+    fastify.get("/product/:id", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         return prisma.product.findUnique({
             where: { id: req.params.id },
             include: { item: true, category: true }
@@ -43,19 +64,43 @@ module.exports = async function (fastify) {
     // 2. CATEGORY APIs
     // -------------------------------------------------------
 
-    fastify.get("/categories", async (req) => {
-        const { companyId } = req.query;
-        return prisma.category.findMany({
-            where: { companyId },
-            include: { products: true }
-        });
+    fastify.get("/categories", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (request, reply) => {
+        try {
+            const page = Number(request.query.page || 1)
+            const take = Number(request.query.take || 20)
+            const skip = (page - 1) * take
+
+            const categories = await fastify.prisma.category.findMany({
+                where: { companyId: request.companyId, parentId: null },
+                skip,
+                take,
+                include: { children: true }
+            })
+
+            return reply.code(200).send({
+                statusCode: '00',
+                message: 'Categories fetched successfully',
+                data: categories
+            })
+        } catch (error) {
+            fastify.log.error(error)
+            return reply.code(500).send({
+                statusCode: '99',
+                message: 'Failed to fetch categories',
+                error: error.message
+            })
+        }
     });
 
     // -------------------------------------------------------
     // 3. CUSTOMER APIs
     // -------------------------------------------------------
 
-    fastify.post('/store/auth/register', async (req, reply) => {
+    fastify.post('/store/auth/register', {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req, reply) => {
         try {
             const { name, email, phone, password, companyId } = req.body;
 
@@ -90,7 +135,9 @@ module.exports = async function (fastify) {
         }
     });
 
-    fastify.post('/store/auth/login', async (req, reply) => {
+    fastify.post('/store/auth/login', {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req, reply) => {
         try {
             const { email, phone, password } = req.body;
 
@@ -140,14 +187,18 @@ module.exports = async function (fastify) {
         }
     });
 
-    fastify.post("/customer/create", async (req) => {
+    fastify.post("/customer/create", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { companyId, name, email, phone } = req.body;
         return prisma.customer.create({
             data: { companyId, name, email, phone }
         });
     });
 
-    fastify.get("/customer/search", async (req) => {
+    fastify.get("/customer/search", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { companyId, q } = req.query;
         return prisma.customer.findMany({
             where: {
@@ -165,46 +216,285 @@ module.exports = async function (fastify) {
     // 4. CART APIs (using your cart.service.js)
     // -------------------------------------------------------
 
-    fastify.post("/cart/add", async (req) => {
-        const { companyId, customerId, itemId, quantity } = req.body;
-        return addItemToCart(prisma, companyId, customerId, itemId, quantity);
+    // fastify.post("/cart/add", {
+    //     preHandler: checkRole("STOREADMIN"),
+    // }, async (req) => {
+    //     const { companyId, customerId, itemId, quantity } = req.body;
+    //     return addItemToCart(prisma, companyId, customerId, itemId, quantity);
+    // });
+
+    // fastify.put("/cart/item/:cartItemId", {
+    //     preHandler: checkRole("STOREADMIN"),
+    // }, async (req) => {
+    //     const { cartItemId } = req.params;
+    //     const { companyId, customerId, quantity } = req.body;
+    //     return updateCartItemQuantity(prisma, companyId, customerId, cartItemId, quantity);
+    // });
+
+    // fastify.put("/cart/item/:cartItemId/increment", {
+    //     preHandler: checkRole("STOREADMIN"),
+    // }, async (req) => {
+    //     const { cartItemId } = req.params;
+    //     const { companyId, customerId } = req.body;
+    //     return incrementCartItemQuantity(prisma, companyId, customerId, cartItemId);
+    // });
+
+    // fastify.put("/cart/item/:cartItemId/decrement", {
+    //     preHandler: checkRole("STOREADMIN"),
+    // }, async (req) => {
+    //     const { cartItemId } = req.params;
+    //     const { companyId, customerId } = req.body;
+    //     return decrementCartItemQuantity(prisma, companyId, customerId, cartItemId);
+    // });
+
+    // fastify.delete("/cart/item/:cartItemId", {
+    //     preHandler: checkRole("STOREADMIN"),
+    // }, async (req) => {
+    //     const { cartItemId } = req.params;
+    //     const { companyId, customerId } = req.body;
+    //     return deleteCartItem(prisma, companyId, customerId, cartItemId);
+    // });
+
+    // fastify.get("/cart/customer/:customerId", {
+    //     preHandler: checkRole("STOREADMIN"),
+    // }, async (req) => {
+    //     const { customerId } = req.params;
+    //     const { companyId } = req.query;
+    //     return getCustomerCarts(prisma, companyId, customerId);
+    // });
+
+    // cart func
+
+    fastify.post("/cart/start", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
+        const cart = await prisma.cart.create({
+            data: {
+                companyId: req.companyId,
+                status: "ACTIVE",
+            },
+            include: {
+                items: true
+            }
+        });
+        return {
+            statusCode: "00",
+            data: { cart },
+        }
     });
 
-    fastify.put("/cart/item/:cartItemId", async (req) => {
+    fastify.post("/cart/add", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
+        const { cartId, itemId, productId } = req.body;
+
+        const item = await prisma.item.findUnique({
+            where: { id: itemId },
+            include: { taxRates: true } // 👈 get tax rate details
+        });
+
+        if (!item) {
+            return {
+                statusCode: "01",
+                message: "Item not found"
+            };
+        }
+
+        // pick first taxRate (or null if none)
+        const selectedTaxRate = item.taxRates.length > 0 ? item.taxRates[0] : null;
+
+        let cartItem = await prisma.cartItem.findFirst({
+            where: { cartId, itemId }
+        });
+
+        if (cartItem) {
+            // increment qty
+            const newQty = cartItem.quantity + 1;
+            const baseTotal = newQty * cartItem.price;
+
+            await prisma.cartItem.update({
+                where: { id: cartItem.id },
+                data: {
+                    quantity: newQty,
+                    total: baseTotal,
+                    taxRateId: selectedTaxRate?.id || null
+                }
+            });
+        } else {
+            // create new cart item
+            await prisma.cartItem.create({
+                data: {
+                    cartId,
+                    itemId,
+                    productId,
+                    quantity: 1,
+                    price: item.price,
+                    total: item.price,
+                    taxRateId: selectedTaxRate?.id || null 
+                }
+            });
+        }
+
+        const fullCart = await prisma.cart.findUnique({
+            where: { id: cartId },
+            include: {
+                items: {
+                    include: { taxRate: true }
+                }
+            }
+        });
+
+        return {
+            statusCode: "00",
+            message: "Item successfully added to cart",
+            data: fullCart
+        };
+    });
+
+    // Fetch full cart with items
+    fastify.get("/cart/:cartId", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
+        const { cartId } = req.params;
+
+        const cart = await prisma.cart.findUnique({
+            where: { id: cartId },
+            include: {
+                items: {
+                    include: {
+                        taxRate: true,
+                        item: { include: { product: true } } // item + product details
+                    }
+                }
+            }
+        });
+
+        if (!cart) {
+            return {
+                statusCode: "01",
+                message: "Cart not found"
+            };
+        }
+
+        return {
+            statusCode: "00",
+            message: "Cart fetched successfully",
+            data: cart
+        };
+    });
+
+    // Increment quantity
+    fastify.put("/cart/item/:cartItemId/increment", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { cartItemId } = req.params;
-        const { companyId, customerId, quantity } = req.body;
-        return updateCartItemQuantity(prisma, companyId, customerId, cartItemId, quantity);
+
+        const ci = await prisma.cartItem.findUnique({ where: { id: cartItemId } });
+        if (!ci) throw new Error("Cart item not found");
+
+        return prisma.cartItem.update({
+            where: { id: cartItemId },
+            data: {
+                quantity: ci.quantity + 1,
+                total: (ci.quantity + 1) * ci.price
+            }
+        });
     });
 
-    fastify.put("/cart/item/:cartItemId/increment", async (req) => {
+    // Decrement quantity
+    fastify.put("/cart/item/:cartItemId/decrement", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { cartItemId } = req.params;
-        const { companyId, customerId } = req.body;
-        return incrementCartItemQuantity(prisma, companyId, customerId, cartItemId);
+
+        const ci = await prisma.cartItem.findUnique({ where: { id: cartItemId } });
+        if (!ci) throw new Error("Cart item not found");
+
+        // if quantity is 1 → remove item
+        if (ci.quantity <= 1)
+            return prisma.cartItem.delete({ where: { id: cartItemId } });
+
+        return prisma.cartItem.update({
+            where: { id: cartItemId },
+            data: {
+                quantity: ci.quantity - 1,
+                total: (ci.quantity - 1) * ci.price
+            }
+        });
     });
 
-    fastify.put("/cart/item/:cartItemId/decrement", async (req) => {
+    fastify.delete("/cart/item/:cartItemId", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { cartItemId } = req.params;
-        const { companyId, customerId } = req.body;
-        return decrementCartItemQuantity(prisma, companyId, customerId, cartItemId);
+
+        const cartItem = await prisma.cartItem.findUnique({
+            where: { id: cartItemId },
+            select: { cartId: true }
+        });
+
+        if (!cartItem) {
+            return {
+                statusCode: "01",
+                message: "Cart item not found"
+            };
+        }
+
+        // Delete item
+        await prisma.cartItem.delete({ where: { id: cartItemId } });
+
+        // Fetch updated cart
+        const updatedCart = await prisma.cart.findUnique({
+            where: { id: cartItem.cartId },
+            include: {
+                items: {
+                    include: {
+                        item: { include: { product: true } }
+                    }
+                }
+            }
+        });
+
+        return {
+            statusCode: "00",
+            message: "Cart item deleted successfully",
+            data: updatedCart
+        };
     });
 
-    fastify.delete("/cart/item/:cartItemId", async (req) => {
-        const { cartItemId } = req.params;
-        const { companyId, customerId } = req.body;
-        return deleteCartItem(prisma, companyId, customerId, cartItemId);
-    });
+    fastify.post("/cart/:cartId/finish", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
+        const { cartId } = req.params;
 
-    fastify.get("/cart/customer/:customerId", async (req) => {
-        const { customerId } = req.params;
-        const { companyId } = req.query;
-        return getCustomerCarts(prisma, companyId, customerId);
+        const cart = await prisma.cart.findUnique({
+            where: { id: cartId },
+            include: { customer: true }
+        });
+
+        if (!cart) throw new Error("Cart not found");
+
+        await prisma.cartItem.deleteMany({ where: { cartId } });
+
+        await prisma.cart.delete({ where: { id: cartId } });
+
+        await prisma.customer.delete({ where: { id: cart.customerId } });
+
+        console.log("Deleted Cart and Customer");
+
+        return {
+            statusCode: "00",
+            message: "Deleted Cart and Customer"
+        };
     });
 
     // -------------------------------------------------------
     // 5. CHECKOUT (Cart → Invoice + InvoiceItems + Payment)
     // -------------------------------------------------------
 
-    fastify.post("/checkout", async (req) => {
+    fastify.post("/checkout", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { companyId, branchId, customerId, cartId, paymentMethod } = req.body;
 
         const cart = await prisma.cart.findUnique({
@@ -281,7 +571,9 @@ module.exports = async function (fastify) {
     // 6. POS Quick Checkout (No Cart)
     // -------------------------------------------------------
 
-    fastify.post("/pos/quick-sale", async (req) => {
+    fastify.post("/pos/quick-sale", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         const { companyId, branchId, customerId, items, paymentMethod } = req.body;
 
         // items = [{ itemId, quantity }]
@@ -355,7 +647,9 @@ module.exports = async function (fastify) {
     // 7. Invoice View
     // -------------------------------------------------------
 
-    fastify.get("/invoice/:id", async (req) => {
+    fastify.get("/invoice/:id", {
+        preHandler: checkRole("STOREADMIN"),
+    }, async (req) => {
         return prisma.invoice.findUnique({
             where: { id: req.params.id },
             include: { items: true, payments: true, customer: true }

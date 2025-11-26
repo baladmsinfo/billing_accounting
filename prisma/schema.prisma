@@ -11,6 +11,7 @@ enum Role {
   USER
   ADMIN
   SUPERADMIN
+  STOREADMIN
 }
 
 enum ProductType {
@@ -22,6 +23,7 @@ model User {
   id                String    @id @default(uuid())
   email             String    @unique
   password          String
+  apikey            String?   @unique
   name              String
   role              Role      @default(USER)
   status            Boolean   @default(false)
@@ -232,10 +234,11 @@ model Item {
   invoiceItems InvoiceItem[]
   stock        StockLedger[]
   cartItems    CartItem[]
+
+  taxRates     TaxRate[]     @relation("ItemTaxRates")
+
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-
-  @@unique([sku, companyId])
 }
 
 model Customer {
@@ -265,8 +268,8 @@ model Cart {
   id         String      @id @default(uuid())
   companyId  String
   company    Company     @relation(fields: [companyId], references: [id])
-  customerId String
-  customer   Customer    @relation(fields: [customerId], references: [id])
+  customerId String?
+  customer   Customer?   @relation(fields: [customerId], references: [id])
   status     CartStatus  @default(ACTIVE)
   items      CartItem[]
 
@@ -406,9 +409,13 @@ model TaxRate {
   type      TaxType
   companyId String
   company   Company       @relation(fields: [companyId], references: [id])
-  items     InvoiceItem[]
-  invoiceTax    InvoiceTax[]
-  cartItems    CartItem[]
+
+  items     Item[]        @relation("ItemTaxRates")
+
+  invoiceTax  InvoiceTax[]
+  cartItems   CartItem[]
+  invoiceItems InvoiceItem[]
+
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 }

@@ -1,45 +1,73 @@
 /**
- * FULL seed for Prisma
- * - Idempotent
- * - Unique GSTINs, emails
- * - Sales + Purchase invoices
- * - Stock Ledger entries
+ * Full idempotent Prisma seed for your schema
+ *
+ * - Uses findFirst / create / update (no reliance on composite unique constraints)
+ * - Ensures unique emails, gstins, skus, invoiceNumbers
+ * - Creates sale + purchase invoices with items and stock ledger
+ *
+ * Usage:
+ *   node prisma/seed.js
+ *
+ * Note: adjust CONFIG counts as needed.
  */
 
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
-const bcrypt = require('bcrypt');
+const bcrypt = require("bcrypt");
 
 const CONFIG = {
   companies: [
-    { name: "Bucksbox Solutions", gstNumber: "33AAAAA0000A1Z5", primaryEmail: "info@bucksbox.in", primaryPhoneNo: "9876500000", city: "Chennai", state: "Tamil Nadu", pincode: 600001, companyType: "Private Limited" },
-    { name: "Demo Trading Pvt Ltd", gstNumber: "27BBBBB0000B1Z6", primaryEmail: "info@demotrading.in", primaryPhoneNo: "9876501000", city: "Bengaluru", state: "Karnataka", pincode: 560001, companyType: "Private Limited" },
+    {
+      name: "Bucksbox Solutions",
+      gstNumber: "33AAAAA0000A1Z5",
+      primaryEmail: "info@bucksbox.in",
+      primaryPhoneNo: "9876500000",
+      city: "Chennai",
+      state: "Tamil Nadu",
+      pincode: 600001,
+      companyType: "Private Limited",
+    },
+    {
+      name: "Demo Trading Pvt Ltd",
+      gstNumber: "27BBBBB0000B1Z6",
+      primaryEmail: "info@demotrading.in",
+      primaryPhoneNo: "9876501000",
+      city: "Bengaluru",
+      state: "Karnataka",
+      pincode: 560001,
+      companyType: "Private Limited",
+    },
   ],
-  branchesPerCompany: 5,
-  categoriesCount: 30,
-  productsCount: 80,
-  customersCount: 10,
-  vendorsCount: 10,
-  invoicesCount: 15,
+  branchesPerCompany: 3,
+  categoriesCount: 12,
+  productsCount: 40,
+  customersCount: 8,
+  vendorsCount: 6,
+  invoicesCount: 8,
+  invoiceLineQuantity: 3, // per invoice
 };
 
-// ---------------- Helpers ----------------
-const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-const intBetween = (a,b) => Math.floor(Math.random() * (b-a+1)) + a;
+// small helpers
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const intBetween = (a, b) =>
+  Math.floor(Math.random() * (b - a + 1)) + a;
 
-// ---------------- Currency ----------------
+// ---- Seed functions ----
+
 async function ensureCurrency() {
   const code = "INR";
-  let currency = await prisma.currency.findUnique({ where: { code } });
-  if (!currency) {
-    currency = await prisma.currency.create({ data: { code, name: "Indian Rupee", symbol: "₹", country: "India", isDefault: true } });
-  } else {
-    await prisma.currency.update({ where: { code }, data: { isDefault: true } });
+  const existing = await prisma.currency.findUnique({ where: { code } });
+  if (existing) {
+    if (!existing.isDefault) {
+      await prisma.currency.update({ where: { code }, data: { isDefault: true } });
+    }
+    return existing;
   }
-  return currency;
+  return prisma.currency.create({
+    data: { code, name: "Indian Rupee", symbol: "₹", country: "India", isDefault: true },
+  });
 }
 
-// ---------------- Company ----------------
 async function ensureCompany(c) {
   let company = await prisma.company.findFirst({ where: { name: c.name } });
   if (!company) {
@@ -69,48 +97,57 @@ async function ensureCompany(c) {
         state: c.state,
         pincode: c.pincode,
         companyType: c.companyType,
-        currencyId: company.currencyId || undefined,
       },
     });
   }
   return company;
 }
 
-// ---------------- Branches ----------------
 async function ensureBranches(company, count) {
   const branches = [];
   for (let i = 1; i <= count; i++) {
     const name = `${company.name} Branch ${i}`;
     let branch = await prisma.branch.findFirst({ where: { name, companyId: company.id } });
     if (!branch) {
-      branch = await prisma.branch.create({ data: { name, address: `Branch ${i} Address`, city: company.city, state: company.state, pincode: company.pincode, companyId: company.id } });
+      branch = await prisma.branch.create({
+        data: {
+          name,
+          address: `Branch ${i} Address`,
+          city: company.city,
+          state: company.state,
+          pincode: company.pincode,
+          companyId: company.id,
+        },
+      });
     } else {
-      branch = await prisma.branch.update({ where: { id: branch.id }, data: { address: `Branch ${i} Address`, city: company.city, state: company.state, pincode: company.pincode } });
+      branch = await prisma.branch.update({
+        where: { id: branch.id },
+        data: {
+          address: `Branch ${i} Address`,
+          city: company.city,
+          state: company.state,
+          pincode: company.pincode,
+        },
+      });
     }
     branches.push(branch);
   }
   return branches;
 }
 
-// ---------------- Accounts ----------------
 async function ensureAccounts(company) {
   const items = [
-    { name: 'Cash', type: 'ASSET' },
-    { name: 'Bank', type: 'ASSET' },
-    { name: 'Accounts Receivable', type: 'ASSET' },
-    { name: 'Inventory', type: 'ASSET' },
-    { name: 'Tax Receivable', type: 'ASSET' },
-    { name: 'Accounts Payable', type: 'LIABILITY' },
-    { name: 'Tax Payable', type: 'LIABILITY' },
-    { name: 'Owner Equity', type: 'EQUITY' },
-    { name: 'Sales Revenue', type: 'INCOME' },
-    { name: 'Purchases', type: 'EXPENSE' },
-    { name: 'Rent Expense', type: 'EXPENSE' },
-    { name: 'Salaries Expense', type: 'EXPENSE' },
-    { name: 'Utilities Expense', type: 'EXPENSE' },
+    { name: "Cash", type: "ASSET" },
+    { name: "Bank", type: "ASSET" },
+    { name: "Accounts Receivable", type: "ASSET" },
+    { name: "Inventory", type: "ASSET" },
+    { name: "Accounts Payable", type: "LIABILITY" },
+    { name: "Sales Revenue", type: "INCOME" },
+    { name: "Purchases", type: "EXPENSE" },
   ];
+
   for (const a of items) {
-    const code = `${company.id}-${a.type}-${a.name.replace(/\s+/g,'')}`;
+    const code = `${company.id.slice(0, 8)}-${a.type}-${a.name.replace(/\s+/g, "")}`;
     let account = await prisma.account.findFirst({ where: { code, companyId: company.id } });
     if (!account) {
       await prisma.account.create({ data: { name: a.name, type: a.type, code, companyId: company.id } });
@@ -120,29 +157,25 @@ async function ensureAccounts(company) {
   }
 }
 
-// ---------------- Tax Rates ----------------
 async function ensureTaxRates(company) {
-  const rates = [
-    { name: "CGST 9%", rate: 9, type: "CGST" },
-    { name: "SGST 9%", rate: 9, type: "SGST" },
-    { name: "IGST 18%", rate: 18, type: "IGST" },
+  const base = [
     { name: "GST 5%", rate: 5, type: "GST" },
     { name: "GST 12%", rate: 12, type: "GST" },
     { name: "GST 18%", rate: 18, type: "GST" },
   ];
-  for (const t of rates) {
-    let tax = await prisma.taxRate.findFirst({ where: { name: t.name, companyId: company.id } });
-    if (!tax) {
-      await prisma.taxRate.create({ data: { name: t.name, rate: t.rate, type: t.type, companyId: company.id } });
+  for (const t of base) {
+    let tr = await prisma.taxRate.findFirst({ where: { name: t.name, companyId: company.id } });
+    if (!tr) {
+      await prisma.taxRate.create({ data: { ...t, companyId: company.id } });
     } else {
-      await prisma.taxRate.update({ where: { id: tax.id }, data: { rate: t.rate, type: t.type } });
+      await prisma.taxRate.update({ where: { id: tr.id }, data: { rate: t.rate, type: t.type } });
     }
   }
+  return prisma.taxRate.findMany({ where: { companyId: company.id } });
 }
 
-// ---------------- Categories ----------------
 async function ensureCategories(company) {
-  const parentNames = ["Groceries","Beverages","Household","Personal Care","Snacks","Dairy","Bakery","Spices"];
+  const parentNames = ["Groceries", "Beverages", "Household", "Personal Care"];
   const createdParents = [];
   for (const pn of parentNames) {
     let parent = await prisma.category.findFirst({ where: { name: pn, companyId: company.id } });
@@ -150,82 +183,260 @@ async function ensureCategories(company) {
     else parent = await prisma.category.update({ where: { id: parent.id }, data: { description: `${pn} parent` } });
     createdParents.push(parent);
   }
-  const childrenToCreate = Math.max(0, CONFIG.categoriesCount - createdParents.length);
-  const childNamesPool = ["Rice & Grains","Atta & Flours","Sugar & Sweeteners","Tea & Coffee","Soft Drinks","Cleaning Supplies","Toiletries","Chocolates","Biscuits","Cheese","Milk","Bread","Spice Powders","Whole Spices","Oils","Pickles","Sauces","Breakfast Cereals","Nuts","Dry Fruits"];
+
+  // create children up to CONFIG.categoriesCount
+  const childPool = ["Rice", "Atta", "Sugar", "Tea", "Coffee", "Chips", "Biscuits", "Milk", "Bread", "Spices", "Oil", "Sauces"];
   const createdChildren = [];
-  for (let i=0;i<childrenToCreate;i++){
-    const name = childNamesPool[i%childNamesPool.length]+(i>=childNamesPool.length?` ${Math.floor(i/childNamesPool.length)}`:'');
-    const parent = createdParents[i%createdParents.length];
+  const toCreate = Math.max(0, CONFIG.categoriesCount - createdParents.length);
+  for (let i = 0; i < toCreate; i++) {
+    const name = `${childPool[i % childPool.length]} ${Math.floor(i / childPool.length) + 1}`.trim();
+    const parent = createdParents[i % createdParents.length];
     let child = await prisma.category.findFirst({ where: { name, companyId: company.id } });
     if (!child) child = await prisma.category.create({ data: { name, description: `${name} child`, parentId: parent.id, companyId: company.id } });
     else child = await prisma.category.update({ where: { id: child.id }, data: { description: `${name} child`, parentId: parent.id } });
     createdChildren.push(child);
   }
+
   return { parents: createdParents, children: createdChildren };
 }
 
-// ---------------- Products & Items ----------------
 async function ensureProductsAndItems(company) {
-  const itemsCreated = [];
-  const productBase = ["Ponni Rice","Aashirvaad Atta","Refined Sugar","Tea Leaves","Instant Coffee","Cooking Oil","Turtle Soap","Colgate Toothpaste","Parle Biscuits","Amul Milk","Britannia Cheese","Sunflower Oil","Masala Powder","Soya Chunks","MTR Ready Mix","Kurkure Snacks","Maggi Noodles","Oreo Biscuits","Tata Salt","Lay's Chips","Himalaya Shampoo"];
   const categories = await prisma.category.findMany({ where: { companyId: company.id } });
-  for (let i=1;i<=CONFIG.productsCount;i++){
-    const base = productBase[(i-1)%productBase.length];
-    const variant = `${base} ${ (i%5===0)?'500g':(i%3===0)?'1kg':'250g' }`;
-    const sku = `${company.name.split(' ')[0].toUpperCase()}-PRD-${String(i).padStart(4,'0')}`;
-    const cat = categories[i%categories.length];
+  const itemsCreated = [];
+  const baseNames = [
+    "Ponni Rice",
+    "Aashirvaad Atta",
+    "Refined Sugar",
+    "Tea Leaves",
+    "Instant Coffee",
+    "Cooking Oil",
+    "Soap Bar",
+    "Toothpaste",
+    "Biscuits",
+    "Milk Packet",
+  ];
+
+  for (let i = 1; i <= CONFIG.productsCount; i++) {
+    const base = baseNames[(i - 1) % baseNames.length];
+    const variant = `${base} ${i % 3 === 0 ? "1kg" : i % 2 === 0 ? "500g" : "250g"}`;
+    const sku = `${company.id.slice(0, 6)}-PRD-${String(i).padStart(4, "0")}`;
+
     let product = await prisma.product.findUnique({ where: { sku } });
-    if (!product) product = await prisma.product.create({ data: { name: variant, sku, description: `${variant} by ${company.name}`, companyId: company.id, categoryId: cat.id } });
-    else product = await prisma.product.update({ where: { id: product.id }, data: { name: variant, description: `${variant} by ${company.name}`, categoryId: cat.id } });
-    // create item
+    if (!product) {
+      product = await prisma.product.create({
+        data: {
+          name: variant,
+          sku,
+          description: `${variant} by ${company.name}`,
+          companyId: company.id,
+          categoryId: pick(categories).id,
+        },
+      });
+    } else {
+      product = await prisma.product.update({
+        where: { id: product.id },
+        data: { name: variant, description: `${variant} by ${company.name}`, categoryId: pick(categories).id },
+      });
+    }
+
     const itemSku = `${sku}-ITEM`;
+    const price = Number((50 + (i * 7)) % 1000) + 30;
+    const mrp = Number((price * 1.12).toFixed(2));
+    const qty = 50 + (i % 120);
+
     let item = await prisma.item.findFirst({ where: { sku: itemSku, companyId: company.id } });
-    const price = Number((50 + (i*3)) % 1000) + 20;
-    const mrp = Number((price*1.12).toFixed(2));
-    const qty = 50 + (i%100);
-    if (!item) item = await prisma.item.create({ data: { sku: itemSku, price, MRP: mrp, quantity: qty, productId: product.id, companyId: company.id } });
-    else item = await prisma.item.update({ where: { id: item.id }, data: { price, MRP: mrp, quantity: qty, productId: product.id } });
+    if (!item) {
+      item = await prisma.item.create({
+        data: {
+          sku: itemSku,
+          price,
+          MRP: mrp,
+          quantity: qty,
+          productId: product.id,
+          companyId: company.id,
+        },
+      });
+    } else {
+      item = await prisma.item.update({
+        where: { id: item.id },
+        data: { price, MRP: mrp, quantity: qty, productId: product.id },
+      });
+    }
+
     itemsCreated.push(item);
   }
+
   return itemsCreated;
 }
 
-// ---------------- Customers & Vendors ----------------
 async function ensureCustomersAndVendors(company) {
   const customers = [];
-  for (let i=1;i<=CONFIG.customersCount;i++){
+  for (let i = 1; i <= CONFIG.customersCount; i++) {
     const name = `${company.name.split(" ")[0]} Customer ${i}`;
-    let cust = await prisma.customer.findFirst({ where: { name, companyId: company.id } });
-    if (!cust) cust = await prisma.customer.create({ data: { name, phone:`98${String(10000000+i).slice(-8)}`, email: `${name.replace(/\s+/g,"").toLowerCase()}@example.com`, companyId: company.id } });
+    const email = `${company.name.split(" ")[0].toLowerCase()}.cust${i}@example.com`;
+    let cust = await prisma.customer.findFirst({ where: { OR: [{ email }, { name, companyId: company.id }], companyId: company.id } });
+    if (!cust) {
+      cust = await prisma.customer.create({ data: { name, email, phone: `98${String(10000000 + i).slice(-8)}`, companyId: company.id } });
+    } else {
+      cust = await prisma.customer.update({ where: { id: cust.id }, data: { phone: cust.phone || `98${String(10000000 + i).slice(-8)}` } });
+    }
     customers.push(cust);
   }
 
   const vendors = [];
-  for (let i=1;i<=CONFIG.vendorsCount;i++){
+  for (let i = 1; i <= CONFIG.vendorsCount; i++) {
     const name = `${company.name.split(" ")[0]} Vendor ${i}`;
-    const gstin = `${company.id}-GST${i}-${Date.now()}`; // unique
+    const gstin = `${company.id.slice(0, 8)}GST${i}`;
     let vend = await prisma.vendor.findFirst({ where: { gstin, companyId: company.id } });
-    if (!vend) vend = await prisma.vendor.create({ data: { name, gstin, phone:`98${String(20000000+i).slice(-8)}`, email: `${name.replace(/\s+/g,"").toLowerCase()}@vendor.com`, companyId: company.id } });
+    if (!vend) {
+      vend = await prisma.vendor.create({ data: { name, gstin, phone: `80${String(20000000 + i).slice(-8)}`, email: `${name.replace(/\s+/g, "").toLowerCase()}@vendor.com`, companyId: company.id } });
+    } else {
+      vend = await prisma.vendor.update({ where: { id: vend.id }, data: { phone: vend.phone || `80${String(20000000 + i).slice(-8)}` } });
+    }
     vendors.push(vend);
   }
   return { customers, vendors };
 }
 
-// ---------------- Users ----------------
 async function ensureUsers(company) {
-  const password = await bcrypt.hash("admin123",10);
-  const adminEmail = `admin@${company.name.replace(/\s+/g,"").toLowerCase()}.local`;
+  const passwordHash = await bcrypt.hash("admin123", 10);
+
+  const adminEmail = `admin@${company.name.replace(/\s+/g, "").toLowerCase()}.local`;
   let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
-  if (!admin) admin = await prisma.user.create({ data: { email: adminEmail, password, name:`${company.name} Admin`, role:"SUPERADMIN", status:true, companyId: company.id } });
-  const staffEmail = `staff@${company.name.replace(/\s+/g,"").toLowerCase()}.local`;
+  if (!admin) {
+    admin = await prisma.user.create({
+      data: {
+        email: adminEmail,
+        password: passwordHash,
+        name: `${company.name} Admin`,
+        role: "SUPERADMIN",
+        status: true,
+        companyId: company.id,
+      },
+    });
+  } else {
+    await prisma.user.update({ where: { id: admin.id }, data: { status: true, companyId: company.id } });
+  }
+
+  const staffEmail = `staff@${company.name.replace(/\s+/g, "").toLowerCase()}.local`;
   let staff = await prisma.user.findUnique({ where: { email: staffEmail } });
-  if (!staff) staff = await prisma.user.create({ data: { email: staffEmail, password, name:`${company.name} Staff`, role:"USER", status:true, companyId: company.id } });
+  if (!staff) {
+    staff = await prisma.user.create({
+      data: {
+        email: staffEmail,
+        password: passwordHash,
+        name: `${company.name} Staff`,
+        role: "USER",
+        status: true,
+        companyId: company.id,
+      },
+    });
+  } else {
+    await prisma.user.update({ where: { id: staff.id }, data: { status: true, companyId: company.id } });
+  }
+
   return { admin, staff };
 }
 
-// ---------------- MAIN ----------------
+async function createInvoices(company, items, customers, vendors, taxRates) {
+  // find some accounts if needed (not strictly required for invoice creation in schema)
+  for (let i = 1; i <= CONFIG.invoicesCount; i++) {
+    const isSale = i % 2 === 0;
+    const invoiceNumber = `INV-${company.id.slice(0, 6)}-${i}`;
+    let invoice = await prisma.invoice.findFirst({ where: { invoiceNumber, companyId: company.id } });
+    if (invoice) {
+      // skip duplicates
+      continue;
+    }
+
+    const invoiceData = {
+      invoiceNumber,
+      companyId: company.id,
+      type: isSale ? "SALE" : "PURCHASE",
+      date: new Date(),
+      status: "PENDING",
+      totalAmount: 0,
+      taxAmount: 0,
+    };
+
+    if (isSale) {
+      invoiceData.customerId = pick(customers).id;
+    } else {
+      invoiceData.vendorId = pick(vendors).id;
+    }
+
+    invoice = await prisma.invoice.create({ data: invoiceData });
+
+    // pick N lines
+    const lines = [];
+    for (let ln = 0; ln < CONFIG.invoiceLineQuantity; ln++) {
+      const item = pick(items);
+      const qty = intBetween(1, 5);
+      const lineTotal = Number((item.price * qty).toFixed(2));
+      const taxRate = pick(taxRates);
+      const invItem = await prisma.invoiceItem.create({
+        data: {
+          invoiceId: invoice.id,
+          itemId: item.id,
+          productId: item.productId,
+          quantity: qty,
+          price: item.price,
+          total: lineTotal,
+          taxRateId: taxRate ? taxRate.id : null,
+          status: "ORDERED",
+        },
+      });
+
+      // Stock ledger entry
+      await prisma.stockLedger.create({
+        data: {
+          companyId: company.id,
+          itemId: item.id,
+          date: new Date(),
+          type: isSale ? "SALE" : "PURCHASE",
+          quantity: qty,
+          note: `${isSale ? "Sale" : "Purchase"} for invoice ${invoice.invoiceNumber}`,
+        },
+      });
+
+      lines.push({ invItem, lineTotal, taxRate });
+    }
+
+    // compute totals and invoiceTax records
+    let totalAmount = 0;
+    let totalTax = 0;
+    for (const l of lines) {
+      totalAmount += l.lineTotal;
+      if (l.taxRate) {
+        // simple tax calculation: tax rate percentage on line total
+        const taxAmount = Number(((l.lineTotal * l.taxRate.rate) / 100).toFixed(2));
+        totalTax += taxAmount;
+
+        // create invoiceTax entry if not exists for invoice+taxRate
+        await prisma.invoiceTax.create({
+          data: {
+            invoiceId: invoice.id,
+            taxRateId: l.taxRate.id,
+            companyId: company.id,
+            amount: taxAmount,
+            invoiceType: isSale ? "SALE" : "PURCHASE",
+          },
+        });
+      }
+    }
+
+    await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { totalAmount: Number(totalAmount.toFixed(2)), taxAmount: Number(totalTax.toFixed(2)) },
+    });
+
+    // Optionally create a payment record for partial / full payments (skipped by default)
+  }
+}
+
 async function main() {
-  console.log("🌱 FULL seed starting...");
+  console.log("🌱 Starting full idempotent seed...");
+
   await ensureCurrency();
 
   for (const c of CONFIG.companies) {
@@ -233,17 +444,24 @@ async function main() {
     const company = await ensureCompany(c);
     await ensureBranches(company, CONFIG.branchesPerCompany);
     await ensureAccounts(company);
-    await ensureTaxRates(company);
-    await ensureCategories(company);
+    const taxRates = await ensureTaxRates(company);
+    const { parents, children } = await ensureCategories(company);
     const items = await ensureProductsAndItems(company);
     const { customers, vendors } = await ensureCustomersAndVendors(company);
     await ensureUsers(company);
-    console.log(`--- Finished seeding company: ${c.name} ---`);
+    await createInvoices(company, items, customers, vendors, taxRates);
+
+    console.log(`--- Done company: ${c.name} ---`);
   }
 
-  console.log("🌱 FULL seed finished.");
+  console.log("🌱 Seed finished.");
 }
 
 main()
-  .catch(e => { console.error(e); process.exit(1); })
-  .finally(async () => { await prisma.$disconnect(); });
+  .catch((err) => {
+    console.error("SEED ERROR:", err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

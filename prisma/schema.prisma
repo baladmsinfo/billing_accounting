@@ -11,6 +11,7 @@ enum Role {
   USER
   ADMIN
   SUPERADMIN
+  STOREADMIN
 }
 
 enum ProductType {
@@ -19,17 +20,18 @@ enum ProductType {
 }
 
 model User {
-  id                   String                @id @default(uuid())
-  email                String                @unique
-  password             String
-  name                 String
-  role                 Role                  @default(USER)
-  status               Boolean               @default(false)
-  mobile_verifited     Boolean               @default(false)
-  email_verifited      Boolean               @default(false)
-  invited              Boolean               @default(false)
-  inviteToken          String?
-  inviteTokenExpiry    DateTime?
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  apikey            String?   @unique
+  name              String
+  role              Role      @default(USER)
+  status            Boolean   @default(false)
+  mobile_verifited  Boolean   @default(false)
+  email_verifited   Boolean   @default(false)
+  invited           Boolean   @default(false)
+  inviteToken       String?
+  inviteTokenExpiry DateTime?
   invoiceItemTimelines InvoiceItemTimeline[]
 
   companyId String? // 👈 Add this field
@@ -243,10 +245,11 @@ model Item {
   invoiceItems InvoiceItem[]
   stock        StockLedger[]
   cartItems    CartItem[]
+
+  taxRates     TaxRate[]     @relation("ItemTaxRates")
+
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-
-  @@unique([sku, companyId])
 }
 
 model Customer {
@@ -275,10 +278,10 @@ enum InvoiceType {
 model Cart {
   id         String     @id @default(uuid())
   companyId  String
-  company    Company    @relation(fields: [companyId], references: [id])
-  customerId String
-  customer   Customer   @relation(fields: [customerId], references: [id])
-  status     CartStatus @default(ACTIVE)
+  company    Company     @relation(fields: [companyId], references: [id])
+  customerId String?
+  customer   Customer?   @relation(fields: [customerId], references: [id])
+  status     CartStatus  @default(ACTIVE)
   items      CartItem[]
 
   createdAt DateTime @default(now())
@@ -412,17 +415,21 @@ model InvoiceItemTimeline {
 }
 
 model TaxRate {
-  id         String        @id @default(uuid())
-  name       String
-  rate       Float
-  type       TaxType
-  companyId  String
-  company    Company       @relation(fields: [companyId], references: [id])
-  items      InvoiceItem[]
-  invoiceTax InvoiceTax[]
-  cartItems  CartItem[]
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  id        String        @id @default(uuid())
+  name      String
+  rate      Float
+  type      TaxType
+  companyId String
+  company   Company       @relation(fields: [companyId], references: [id])
+
+  items     Item[]        @relation("ItemTaxRates")
+
+  invoiceTax  InvoiceTax[]
+  cartItems   CartItem[]
+  invoiceItems InvoiceItem[]
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 enum TaxType {

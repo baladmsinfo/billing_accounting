@@ -350,6 +350,7 @@ module.exports = async function (fastify, opts) {
               price: true,
               quantity: true,
               location: true,
+              taxRates: true
             },
           },
         },

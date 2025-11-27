@@ -77,10 +77,16 @@ fastify.after(async () => {
 
   // Common plugins
   fastify.register(require('@fastify/helmet'))
+
   fastify.register(require('@fastify/cors'), {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-api-key',
+      'X-API-Key'
+    ],
   })
 
   // App plugins
@@ -95,6 +101,8 @@ fastify.after(async () => {
         "/api/users/send-otp",
         "/api/users/verify-otp",
         "/api/users/register",
+        "/upload",
+        "/api/users/currencies"
       ];
     } else {
       publicPaths = [
@@ -105,6 +113,8 @@ fastify.after(async () => {
         "/api/users/verify-otp",
         "/api/users/register",
         "/images",
+        "/upload",
+        "/api/users/currencies"
       ];
     }
 
@@ -113,12 +123,14 @@ fastify.after(async () => {
     }
 
     try {
+      console.log("Requests:", req.headers["x-api-key"]);
+      
       const apiKey = req.headers["x-api-key"];
       const bearer = req.headers["authorization"]?.split(" ")[1];
 
       if (apiKey) {
         const company = await fastify.prisma.company.findUnique({
-          where: { privateapiKey: apiKey },
+          where: { publicapiKey: apiKey },
           include: {
             users: true,
             currency: true,
@@ -133,10 +145,12 @@ fastify.after(async () => {
 
         req.company = company;
         req.companyId = company.id;
-        req.role = "ADMIN";
-        req.user = null;
+        req.role = "STOREADMIN";
 
-        return; 
+        console.log(req.user, "req from user");
+        
+
+        return;
       }
 
       if (bearer) {

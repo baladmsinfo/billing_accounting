@@ -77,7 +77,7 @@ model Company {
   invoiceTax    InvoiceTax[]
   vendors       Vendor[]
   carts         Cart[]
-
+  trial         Boolean        @default(true)
   primaryEmail     String
   secondaryEmail   String?
   primaryPhoneNo   String
@@ -180,7 +180,7 @@ model Product {
   name        String
   sku         String  @unique
   description String?
-
+  imageUrl    String?
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 

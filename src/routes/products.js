@@ -8,57 +8,57 @@ module.exports = async function (fastify, opts) {
     '/',
     {
       preHandler: checkRole("ADMIN"),
-      schema: {
-        tags: ['Product'],
-        description: 'Create a new product with items and initial stock',
-        body: {
-          type: 'object',
-          required: ['name', 'sku', 'description'],
-          properties: {
-            name: { type: 'string', example: 'Laptop' },
-            sku: { type: 'string', example: 'LAP-001' },
-            description: { type: 'string', example: 'High performance laptop' },
-            categoryId: { type: 'string', example: null },
-            subCategoryId: { type: 'string', example: null },
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                required: ['sku', 'price', 'quantity', 'location'],
-                properties: {
-                  sku: { type: 'string', example: 'LAP-001-RED' },
-                  price: { type: 'number', example: 75000 },
-                  quantity: { type: 'integer', example: 50 },
-                  location: { type: 'string', example: 'Warehouse A' }
-                }
-              }
-            }
-          }
-        }
-      }
     },
     async (request, reply) => {
       try {
         const data = { ...request.body, companyId: request.user.companyId }
 
+        const company = await fastify.prisma.company.findUnique({
+          where: { id: data.companyId },
+          select: { trial: true },
+        });
+
+        if (company.trial) {
+          const totalProducts = await fastify.prisma.product.count({
+            where: { companyId: data.companyId },
+          });
+
+          if (totalProducts >= 1) {
+            return reply.code(201).send({
+              statusCode: "05",
+              message: "Trial limit reached. You can only add 10 products. Please Subscribe a plan to add more products.",
+            });
+          }
+        }
+
         const productData = {
           name: data.name,
           sku: data.sku,
           description: data.description,
-          companyId: data.companyId
+          companyId: data.companyId,
+          imageUrl: data.imageUrl,
         }
 
-        if (data.categoryId) {
-          productData.categoryId = data.categoryId
-        }
-
-        if (data.subCategoryId) {
-          productData.subCategoryId = data.subCategoryId
-        }
+        if (data.categoryId) productData.categoryId = data.categoryId
+        if (data.subCategoryId) productData.subCategoryId = data.subCategoryId
 
         const product = await fastify.prisma.product.create({
           data: productData
         })
+
+        if (data.imageId) {
+          await fastify.prisma.images.update({
+            where: { id: data.imageId },
+            data: { productId: product.id }
+          })
+        }
+
+        if (Array.isArray(data.imageIds) && data.imageIds.length > 0) {
+          await fastify.prisma.images.updateMany({
+            where: { id: { in: data.imageIds } },
+            data: { productId: product.id }
+          })
+        }
 
         if (Array.isArray(data.items) && data.items.length > 0) {
           for (const item of data.items) {
@@ -84,16 +84,20 @@ module.exports = async function (fastify, opts) {
           }
         }
 
-        const productWithItems = await fastify.prisma.product.findUnique({
+        const productWithRelations = await fastify.prisma.product.findUnique({
           where: { id: product.id },
-          include: { items: true }
+          include: {
+            items: true,
+            images: true
+          }
         })
 
         return reply.code(201).send({
           statusCode: '00',
           message: 'Product created successfully',
-          data: productWithItems
+          data: productWithRelations
         })
+
       } catch (error) {
         fastify.log.error(error)
         return reply.code(500).send({

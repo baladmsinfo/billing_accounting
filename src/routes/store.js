@@ -469,7 +469,6 @@ module.exports = async function (fastify) {
 
         const cart = await prisma.cart.findUnique({
             where: { id: cartId },
-            include: { customer: true }
         });
 
         if (!cart) throw new Error("Cart not found");
@@ -478,13 +477,12 @@ module.exports = async function (fastify) {
 
         await prisma.cart.delete({ where: { id: cartId } });
 
-        await prisma.customer.delete({ where: { id: cart.customerId } });
 
-        console.log("Deleted Cart and Customer");
+        console.log("Deleted Cart");
 
         return {
             statusCode: "00",
-            message: "Deleted Cart and Customer"
+            message: "Deleted Cart"
         };
     });
 

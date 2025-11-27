@@ -101,7 +101,6 @@ fastify.after(async () => {
         "/api/users/send-otp",
         "/api/users/verify-otp",
         "/api/users/register",
-        "/upload",
         "/api/users/currencies"
       ];
     } else {
@@ -113,7 +112,6 @@ fastify.after(async () => {
         "/api/users/verify-otp",
         "/api/users/register",
         "/images",
-        "/upload",
         "/api/users/currencies"
       ];
     }
@@ -191,6 +189,7 @@ fastify.after(async () => {
   fastify.register(require('./routes/account'), { prefix: '/api/account' })
   fastify.register(require('./routes/expense'), { prefix: '/api/expenses' })
   // fastify.register(require('./routes/companies'), { prefix: '/api/companies' })
+  fastify.register(require("./routes/subscription"));
   fastify.register(require('./routes/categories'), { prefix: '/api/categories' })
   fastify.register(require('./routes/products'), { prefix: '/api/products' })
   fastify.register(require('./routes/payment'), { prefix: '/api/payments' })
@@ -200,6 +199,7 @@ fastify.after(async () => {
   fastify.register(require('./routes/customers'), { prefix: '/api/customers' })
   fastify.register(require('./routes/vendor'), { prefix: '/api/vendor' })
   fastify.register(require('./routes/dashboard-reports'))
+  fastify.register(require('./routes/cart'), { prefix: '/api/cart' })
   fastify.register(require('./routes/invoices'), { prefix: '/api/invoices' })
   fastify.register(require('./routes/taxRates'), { prefix: '/api/tax-rates' })
   fastify.register(require('./routes/stock'), { prefix: '/api/stock' })

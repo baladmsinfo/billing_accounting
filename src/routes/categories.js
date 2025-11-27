@@ -12,6 +12,24 @@ module.exports = async function (fastify, opts) {
                 const { name, description, children = [] } = request.body
                 const { companyId } = request.user
 
+                const company = await fastify.prisma.company.findUnique({
+                    where: { id: companyId },
+                    select: { trial: true } 
+                })
+
+                if (company?.trial) {
+                    const categoryCount = await fastify.prisma.category.count({
+                        where: { companyId }
+                    })
+
+                    if (categoryCount >= 5) {
+                        return reply.code(201).send({
+                            statusCode: '05',
+                            message: 'Trial limit reached. You can create only 5 categories. Subscribe to a plan to create more.',
+                        })
+                    }
+                }
+
                 const existingCategory = await fastify.prisma.category.findFirst({
                     where: {
                         companyId,

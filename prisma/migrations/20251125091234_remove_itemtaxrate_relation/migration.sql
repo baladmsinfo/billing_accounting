@@ -1,9 +1,6 @@
 -- DropIndex
 DROP INDEX "public"."Item_sku_companyId_key";
 
--- AlterTable
-ALTER TABLE "public"."Customer" ADD COLUMN     "password" TEXT;
-
 -- CreateTable
 CREATE TABLE "public"."_ItemTaxRates" (
     "A" TEXT NOT NULL,

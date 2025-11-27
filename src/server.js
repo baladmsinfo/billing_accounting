@@ -27,6 +27,14 @@ fastify.ready((err) => {
 
 fastify.after(async () => {
 
+  const multipart = require("@fastify/multipart");
+
+    fastify.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5 MB
+    },
+  });
+
 
   const rateLimit = require('@fastify/rate-limit')
   fastify.register(rateLimit, {
@@ -64,6 +72,9 @@ fastify.after(async () => {
     }
   })
 
+  const uploadToSpacesPlugin = require("./plugins/uploadToSpaces");
+  fastify.register(uploadToSpacesPlugin);
+
   // Common plugins
   fastify.register(require('@fastify/helmet'))
 
@@ -90,6 +101,8 @@ fastify.after(async () => {
         "/api/users/send-otp",
         "/api/users/verify-otp",
         "/api/users/register",
+        "/upload",
+        "/api/users/currencies"
       ];
     } else {
       publicPaths = [
@@ -100,6 +113,8 @@ fastify.after(async () => {
         "/api/users/verify-otp",
         "/api/users/register",
         "/images",
+        "/upload",
+        "/api/users/currencies"
       ];
     }
 
@@ -189,6 +204,9 @@ fastify.after(async () => {
   fastify.register(require('./routes/taxRates'), { prefix: '/api/tax-rates' })
   fastify.register(require('./routes/stock'), { prefix: '/api/stock' })
   fastify.register(require('./routes/store'), { prefix: '/api/store' })
+  fastify.register(require("./routes/upload"));
+
+
 
   // Global error handler
   fastify.setErrorHandler((error, request, reply) => {

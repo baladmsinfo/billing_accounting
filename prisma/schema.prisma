@@ -232,24 +232,25 @@ enum PaymentMethod {
 }
 
 model Item {
-  id           String        @id @default(uuid())
+  id           String      @id @default(uuid())
   productId    String
-  product      Product       @relation(fields: [productId], references: [id])
+  product      Product     @relation(fields: [productId], references: [id])
   sku          String
   price        Float
   MRP          Float?
-  quantity     Int           @default(0)
+  quantity     Int         @default(0)
   location     String?
   companyId    String
-  company      Company       @relation(fields: [companyId], references: [id])
+  company      Company     @relation(fields: [companyId], references: [id])
   invoiceItems InvoiceItem[]
   stock        StockLedger[]
   cartItems    CartItem[]
 
-  taxRates     TaxRate[]     @relation("ItemTaxRates")
+  taxRateId  String?       
+  taxRate    TaxRate?       @relation(fields: [taxRateId], references: [id])
 
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Customer {
@@ -270,6 +271,8 @@ model Customer {
 
 enum InvoiceType {
   SALE
+  POS
+  ONLINE
   PURCHASE
   RETURN
   OTHER
@@ -281,7 +284,7 @@ model Cart {
   company    Company     @relation(fields: [companyId], references: [id])
   customerId String?
   customer   Customer?   @relation(fields: [customerId], references: [id])
-  status     CartStatus  @default(ACTIVE)
+  status     CartStatus  @default(PENDING)
   items      CartItem[]
 
   createdAt DateTime @default(now())
@@ -418,22 +421,23 @@ model InvoiceItemTimeline {
 }
 
 model TaxRate {
-  id        String        @id @default(uuid())
-  name      String
-  rate      Float
-  type      TaxType
-  companyId String
-  company   Company       @relation(fields: [companyId], references: [id])
+  id          String      @id @default(uuid())
+  name        String
+  rate        Float
+  type        TaxType
+  companyId   String
+  company     Company     @relation(fields: [companyId], references: [id])
 
-  items     Item[]        @relation("ItemTaxRates")
+  items       Item[]      
 
-  invoiceTax  InvoiceTax[]
-  cartItems   CartItem[]
+  invoiceTax   InvoiceTax[]
+  cartItems    CartItem[]
   invoiceItems InvoiceItem[]
 
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
+
 
 enum TaxType {
   GST

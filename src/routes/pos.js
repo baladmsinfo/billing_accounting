@@ -1,24 +1,20 @@
 // routes/store.routes.js
 
-const {
-    addItemToCart,
-    updateCartItemQuantity,
-    deleteCartItem,
-    incrementCartItemQuantity,
-    decrementCartItemQuantity,
-    getCustomerCarts
-} = require("../services/cartService");
-
 const productSvc = require('../services/productService')
+const Decimal = require('decimal.js');
 
 const checkRole = require('../utils/checkRole')
 
+async function getAccountId(tx, companyId, accountName) {
+    const acc = await tx.account.findFirst({
+        where: { companyId, name: accountName }
+    })
+    if (!acc) throw new Error(`Account not found: ${accountName}`)
+    return acc.id
+}
+
 module.exports = async function (fastify) {
     const prisma = fastify.prisma;
-
-    // -------------------------------------------------------
-    // 1. PRODUCT APIs
-    // -------------------------------------------------------
 
     fastify.get("/products", {
         preHandler: checkRole("ADMIN"),
@@ -60,9 +56,6 @@ module.exports = async function (fastify) {
         });
     });
 
-    // -------------------------------------------------------
-    // 2. CATEGORY APIs
-    // -------------------------------------------------------
 
     fastify.get("/categories", {
         preHandler: checkRole("ADMIN"),
@@ -94,99 +87,6 @@ module.exports = async function (fastify) {
         }
     });
 
-    // -------------------------------------------------------
-    // 3. CUSTOMER APIs
-    // -------------------------------------------------------
-
-    fastify.post('/store/auth/register', {
-        preHandler: checkRole("ADMIN"),
-    }, async (req, reply) => {
-        try {
-            const { name, email, phone, password, companyId } = req.body;
-
-            if (!name || !password || !companyId) {
-                return reply.code(400).send({ message: "Name, password & companyId required" });
-            }
-
-            const hashed = await fastify.bcrypt.hash(password);
-
-            const customer = await fastify.prisma.customer.create({
-                data: {
-                    name,
-                    email,
-                    phone,
-                    password: hashed,
-                    companyId
-                }
-            });
-
-            return reply.send({
-                message: "Customer registered successfully",
-                customer: {
-                    id: customer.id,
-                    name: customer.name,
-                    email: customer.email,
-                    phone: customer.phone
-                }
-            });
-
-        } catch (err) {
-            return reply.code(500).send({ message: "Registration error", error: err.message });
-        }
-    });
-
-    fastify.post('/store/auth/login', {
-        preHandler: checkRole("ADMIN"),
-    }, async (req, reply) => {
-        try {
-            const { email, phone, password } = req.body;
-
-            if ((!email && !phone) || !password) {
-                return reply.code(400).send({ message: "Email/Phone & password required" });
-            }
-
-            let customer;
-
-            if (email) {
-                customer = await fastify.prisma.customer.findFirst({ where: { email } });
-            } else {
-                customer = await fastify.prisma.customer.findFirst({ where: { phone } });
-            }
-
-            if (!customer || !customer.password) {
-                return reply.code(401).send({ message: "Invalid login credentials" });
-            }
-
-            const match = await fastify.bcrypt.compare(password, customer.password);
-            if (!match) {
-                return reply.code(401).send({ message: "Invalid password" });
-            }
-
-            const token = fastify.jwt.sign({
-                id: customer.id,
-                name: customer.name,
-                phone: customer.phone,
-                email: customer.email,
-                companyId: customer.companyId
-            });
-
-            return reply.send({
-                message: "Login successful",
-                token,
-                customer: {
-                    id: customer.id,
-                    name: customer.name,
-                    email: customer.email,
-                    phone: customer.phone,
-                    companyId: customer.companyId
-                }
-            });
-
-        } catch (err) {
-            return reply.code(500).send({ message: "Login error", error: err.message });
-        }
-    });
-
     fastify.post("/customer/create", {
         preHandler: checkRole("ADMIN"),
     }, async (req) => {
@@ -212,9 +112,6 @@ module.exports = async function (fastify) {
         });
     });
 
-    // -------------------------------------------------------
-    // 4. CART APIs (using your cart.service.js)
-    // -------------------------------------------------------
 
     // fastify.post("/cart/add", {
     //     preHandler: checkRole("ADMIN"),
@@ -271,7 +168,7 @@ module.exports = async function (fastify) {
         const cart = await prisma.cart.create({
             data: {
                 companyId: req.companyId,
-                status: "ACTIVE",
+                status: "PENDING",
             },
             include: {
                 items: true
@@ -290,7 +187,6 @@ module.exports = async function (fastify) {
 
         const item = await prisma.item.findUnique({
             where: { id: itemId },
-            include: { taxRates: true } // 👈 get tax rate details
         });
 
         if (!item) {
@@ -299,9 +195,6 @@ module.exports = async function (fastify) {
                 message: "Item not found"
             };
         }
-
-        // pick first taxRate (or null if none)
-        const selectedTaxRate = item.taxRates.length > 0 ? item.taxRates[0] : null;
 
         let cartItem = await prisma.cartItem.findFirst({
             where: { cartId, itemId }
@@ -317,7 +210,7 @@ module.exports = async function (fastify) {
                 data: {
                     quantity: newQty,
                     total: baseTotal,
-                    taxRateId: selectedTaxRate?.id || null
+                    taxRateId: item.taxRateId || null
                 }
             });
         } else {
@@ -330,7 +223,7 @@ module.exports = async function (fastify) {
                     quantity: 1,
                     price: item.price,
                     total: item.price,
-                    taxRateId: selectedTaxRate?.id || null 
+                    taxRateId: item.taxRateId || null
                 }
             });
         }
@@ -380,6 +273,79 @@ module.exports = async function (fastify) {
             statusCode: "00",
             message: "Cart fetched successfully",
             data: cart
+        };
+    });
+
+    fastify.post("/cart/save-draft", {
+        preHandler: checkRole("ADMIN"),
+    }, async (req) => {
+        const { cartId } = req.body;
+
+        if (!cartId) {
+            return {
+                statusCode: "01",
+                message: "cartId is required",
+            };
+        }
+
+        const cart = await prisma.cart.findUnique({ where: { id: cartId } });
+
+        if (!cart) {
+            return {
+                statusCode: "01",
+                message: "Cart not found",
+            };
+        }
+
+        const updatedCart = await prisma.cart.update({
+            where: { id: cartId },
+            data: { status: "DRAFT" },
+            include: {
+                items: {
+                    include: { taxRate: true }
+                }
+            }
+        });
+
+        return {
+            statusCode: "00",
+            message: "Cart saved as draft successfully",
+            data: updatedCart,
+        };
+    });
+
+    fastify.post("/cart/discard-cart", {
+        preHandler: checkRole("ADMIN"),
+    }, async (req) => {
+        const { cartId } = req.body;
+
+        if (!cartId) {
+            return {
+                statusCode: "01",
+                message: "cartId is required",
+            };
+        }
+
+        const cart = await prisma.cart.findUnique({
+            where: { id: cartId },
+        });
+
+        if (!cart) {
+            return {
+                statusCode: "01",
+                message: "Cart not found",
+            };
+        }
+
+        const discardCart = await prisma.cart.update({
+            where: { id: cartId },
+            data: { status: "CANCELLED" },
+        });
+
+        return {
+            statusCode: "00",
+            message: "Cart cancelled successfully",
+            data: discardCart,
         };
     });
 
@@ -469,7 +435,6 @@ module.exports = async function (fastify) {
 
         const cart = await prisma.cart.findUnique({
             where: { id: cartId },
-            include: { customer: true }
         });
 
         if (!cart) throw new Error("Cart not found");
@@ -478,105 +443,227 @@ module.exports = async function (fastify) {
 
         await prisma.cart.delete({ where: { id: cartId } });
 
-        await prisma.customer.delete({ where: { id: cart.customerId } });
-
-        console.log("Deleted Cart and Customer");
 
         return {
             statusCode: "00",
-            message: "Deleted Cart and Customer"
+            message: "Deleted Cart successfully"
         };
     });
 
-    // -------------------------------------------------------
-    // 5. CHECKOUT (Cart → Invoice + InvoiceItems + Payment)
-    // -------------------------------------------------------
 
-    fastify.post("/checkout", {
-        preHandler: checkRole("ADMIN"),
-    }, async (req) => {
-        const { companyId, branchId, customerId, cartId, paymentMethod } = req.body;
+    fastify.post(
+        "/checkout",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            const {
+                cartId,
+                paymentMethod,
+                customer
+            } = req.body;
 
-        const cart = await prisma.cart.findUnique({
-            where: { id: cartId },
-            include: {
-                items: { include: { item: true } }
-            }
-        });
+            const companyId = req.companyId;
 
-        if (!cart || cart.items.length === 0) {
-            throw new Error("Cart empty");
-        }
+            return await fastify.prisma.$transaction(async (tx) => {
+                //  CART VALIDATION 
+                const cart = await tx.cart.findUnique({
+                    where: { id: cartId },
+                    include: {
+                        items: {
+                            include: {
+                                item: { include: { taxRate: true } } // 👈 one taxRate only
+                            }
+                        }
+                    }
+                });
+                if (!cart || cart.items.length === 0) throw new Error("Cart empty");
 
-        // Create invoice
-        const invoice = await prisma.invoice.create({
-            data: {
-                companyId,
-                branchId,
-                customerId,
-                status: "PAID",
-                total: cart.items.reduce((s, i) => s + i.total, 0)
-            }
-        });
+                //  CUSTOMER 
+                let customerId = null;
+                const hasCustomer =
+                    customer?.name || customer?.mobile || customer?.email || customer?.address;
 
-        // Create invoice items + stock reduce
-        for (const c of cart.items) {
-            await prisma.invoiceItem.create({
-                data: {
+                if (hasCustomer) {
+                    let existingCustomer = null;
+                    if (customer.mobile) {
+                        existingCustomer = await tx.customer.findFirst({
+                            where: { phone: customer.mobile, companyId }
+                        });
+                    }
+
+                    if (existingCustomer) {
+                        await tx.customer.update({
+                            where: { id: existingCustomer.id },
+                            data: {
+                                name: customer.name || existingCustomer.name,
+                                email: customer.email || existingCustomer.email,
+                                address: customer.address || existingCustomer.address
+                            }
+                        });
+                        customerId = existingCustomer.id;
+                    } else {
+                        const newCustomer = await tx.customer.create({
+                            data: {
+                                companyId,
+                                name: customer.name || "Guest",
+                                phone: customer.mobile || null,
+                                email: customer.email || null,
+                                address: customer.address || null
+                            }
+                        });
+                        customerId = newCustomer.id;
+                    }
+                }
+
+                //  INVOICE CREATE 
+                const invoice = await tx.invoice.create({
+                    data: {
+                        companyId,
+                        customerId,
+                        date: new Date(),
+                        status: paymentMethod === "cash" ? "PAID" : "PENDING",
+                        type: "POS",
+                        invoiceNumber: `INV${Date.now()}`,
+                        totalAmount: 0,
+                        taxAmount: 0
+                    }
+                });
+
+                let totalAmount = new Decimal(0);
+                let totalTax = new Decimal(0);
+
+                //  INVOICE ITEMS / STOCK / TAX 
+                for (const row of cart.items) {
+                    const lineTotal = new Decimal(row.quantity).times(new Decimal(row.price));
+                    totalAmount = totalAmount.plus(lineTotal);
+
+                    let taxAmountForItem = new Decimal(0);
+
+                    if (row.item.taxRate) {
+                        const rate = new Decimal(row.item.taxRate.rate).div(100);
+                        taxAmountForItem = lineTotal.times(rate);
+                        totalTax = totalTax.plus(taxAmountForItem);
+
+                        await tx.invoiceTax.create({
+                            data: {
+                                invoiceId: invoice.id,
+                                taxRateId: row.item.taxRate.id,
+                                companyId,
+                                invoiceType: "POS",
+                                amount: parseFloat(taxAmountForItem.toFixed(2))
+                            }
+                        });
+                    }
+
+                    await tx.invoiceItem.create({
+                        data: {
+                            invoiceId: invoice.id,
+                            itemId: row.itemId,
+                            productId: row.productId,
+                            quantity: row.quantity,
+                            price: row.price,
+                            total: parseFloat(lineTotal.toFixed(2)),
+                            taxRateId: row.item.taxRate?.id ?? null
+                        }
+                    });
+
+                    if (row.item.quantity < row.quantity) {
+                        throw new Error(`Insufficient stock for item ${row.item.name}`);
+                    }
+
+                    await tx.item.update({
+                        where: { id: row.itemId },
+                        data: { quantity: { decrement: row.quantity } }
+                    });
+
+                    await tx.stockLedger.create({
+                        data: {
+                            companyId,
+                            itemId: row.itemId,
+                            type: "SALE",
+                            quantity: row.quantity,
+                            note: `Sale  invoice ${invoice.invoiceNumber}`
+                        }
+                    });
+                }
+
+                //  UPDATE INVOICE TOTALS 
+                await tx.invoice.update({
+                    where: { id: invoice.id },
+                    data: {
+                        totalAmount: parseFloat(totalAmount.toFixed(2)),
+                        taxAmount: parseFloat(totalTax.toFixed(2))
+                    }
+                });
+
+                //  PAYMENT 
+                await tx.payment.create({
+                    data: {
+                        companyId,
+                        invoiceId: invoice.id,
+                        amount: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
+                        method: paymentMethod.toUpperCase()
+                    }
+                });
+
+                //  JOURNAL ENTRIES 
+                const description = `Invoice ${invoice.invoiceNumber}`;
+
+                await tx.journalEntry.create({
+                    data: {
+                        companyId,
+                        accountId: await getAccountId(tx, companyId, "Accounts Receivable"),
+                        date: new Date(),
+                        description,
+                        debit: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
+                        credit: 0
+                    }
+                });
+
+                await tx.journalEntry.create({
+                    data: {
+                        companyId,
+                        accountId: await getAccountId(tx, companyId, "Sales Revenue"),
+                        date: new Date(),
+                        description,
+                        debit: 0,
+                        credit: parseFloat(totalAmount.toFixed(2))
+                    }
+                });
+
+                if (totalTax.gt(0)) {
+                    await tx.journalEntry.create({
+                        data: {
+                            companyId,
+                            accountId: await getAccountId(tx, companyId, "Tax Payable"),
+                            date: new Date(),
+                            description,
+                            debit: 0,
+                            credit: parseFloat(totalTax.toFixed(2))
+                        }
+                    });
+                }
+
+                //  CLOSE CART 
+                await tx.cart.update({
+                    where: { id: cartId },
+                    data: { status: "CHECKEDOUT" }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Checkout successful",
                     invoiceId: invoice.id,
-                    itemId: c.itemId,
-                    productId: c.productId,
-                    quantity: c.quantity,
-                    price: c.price,
-                    total: c.total
-                }
-            });
-
-            // Reduce stock
-            await prisma.item.update({
-                where: { id: c.itemId },
-                data: { stock: { decrement: c.quantity } }
-            });
-
-            await prisma.stockLedger.create({
-                data: {
-                    companyId,
-                    branchId,
-                    itemId: c.itemId,
-                    type: "SALE",
-                    quantity: c.quantity,
-                    reference: invoice.id
-                }
+                    customerId
+                });
             });
         }
-
-        // Payment
-        await prisma.payment.create({
-            data: {
-                invoiceId: invoice.id,
-                amount: invoice.total,
-                method: paymentMethod || "CASH"
-            }
-        });
-
-        // Empty cart
-        await prisma.cartItem.deleteMany({
-            where: { cartId }
-        });
-
-        return { invoiceId: invoice.id };
-    });
-
-    // -------------------------------------------------------
-    // 6. POS Quick Checkout (No Cart)
-    // -------------------------------------------------------
+    );
 
     fastify.post("/pos/quick-sale", {
         preHandler: checkRole("ADMIN"),
     }, async (req) => {
         const { companyId, branchId, customerId, items, paymentMethod } = req.body;
 
-        // items = [{ itemId, quantity }]
 
         const invoice = await prisma.invoice.create({
             data: {
@@ -642,10 +729,6 @@ module.exports = async function (fastify) {
 
         return { invoiceId: invoice.id, total };
     });
-
-    // -------------------------------------------------------
-    // 7. Invoice View
-    // -------------------------------------------------------
 
     fastify.get("/invoice/:id", {
         preHandler: checkRole("ADMIN"),

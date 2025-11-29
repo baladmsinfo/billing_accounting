@@ -23,7 +23,7 @@ module.exports = async function (fastify, opts) {
             where: { companyId: data.companyId },
           });
 
-          if (totalProducts >= 1) {
+          if (totalProducts >= 10) {
             return reply.code(201).send({
               statusCode: "05",
               message: "Trial limit reached. You can only add 10 products. Please Subscribe a plan to add more products.",
@@ -412,33 +412,40 @@ module.exports = async function (fastify, opts) {
           })
         }
 
-        const tax = await fastify.prisma.taxRate.findFirst({
-          where: {
-            id: taxrate,
-            companyId
-          }
-        })
+        let tax = null
 
-        if (!tax) {
-          return reply.code(400).send({
-            statusCode: '01',
-            message: `Invalid taxrateId: ${taxrate}`
+        if (taxrate) {
+          tax = await fastify.prisma.taxRate.findFirst({
+            where: {
+              id: taxrate,
+              companyId
+            }
           })
+
+          if (!tax) {
+            return reply.code(400).send({
+              statusCode: '01',
+              message: `Invalid taxrateId: ${taxrate}`
+            })
+          }
         }
 
-        const newItem = await fastify.prisma.item.create({
-          data: {
-            sku,
-            price,
-            quantity,
-            location,
-            companyId,
-            productId,
-            taxRates: {
-              connect: { id: taxrate }
-            }
+        const itemData = {
+          sku,
+          price,
+          quantity,
+          location,
+          companyId,
+          productId
+        }
+
+        if (taxrate && tax) {
+          itemData.taxRates = {
+            connect: { id: taxrate }
           }
-        })
+        }
+
+        const newItem = await fastify.prisma.item.create({ data: itemData })
 
         if (quantity > 0) {
           await fastify.prisma.stockLedger.create({

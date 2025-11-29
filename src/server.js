@@ -29,7 +29,7 @@ fastify.after(async () => {
 
   const multipart = require("@fastify/multipart");
 
-    fastify.register(multipart, {
+  fastify.register(multipart, {
     limits: {
       fileSize: 5 * 1024 * 1024, // 5 MB
     },
@@ -122,7 +122,7 @@ fastify.after(async () => {
 
     try {
       console.log("Requests:", req.headers["x-api-key"]);
-      
+
       const apiKey = req.headers["x-api-key"];
       const bearer = req.headers["authorization"]?.split(" ")[1];
 
@@ -146,7 +146,7 @@ fastify.after(async () => {
         req.role = "STOREADMIN";
 
         console.log(req.user, "req from user");
-        
+
 
         return;
       }
@@ -199,7 +199,6 @@ fastify.after(async () => {
   fastify.register(require('./routes/customers'), { prefix: '/api/customers' })
   fastify.register(require('./routes/vendor'), { prefix: '/api/vendor' })
   fastify.register(require('./routes/dashboard-reports'))
-  fastify.register(require('./routes/cart'), { prefix: '/api/cart' })
   fastify.register(require('./routes/invoices'), { prefix: '/api/invoices' })
   fastify.register(require('./routes/taxRates'), { prefix: '/api/tax-rates' })
   fastify.register(require('./routes/stock'), { prefix: '/api/stock' })
@@ -207,7 +206,10 @@ fastify.after(async () => {
   fastify.register(require('./routes/pos'), { prefix: '/api/pos' })
   fastify.register(require("./routes/upload"));
 
-
+  fastify.register(require("./plugins/subscription.js"), {
+    SUBSCRIPTION_BASE_URL: fastify.config.SUBSCRIPTION_BASE_URL,
+    SUBSCRIPTION_APIKEY: fastify.config.SUBSCRIPTION_APIKEY,
+  });
 
   // Global error handler
   fastify.setErrorHandler((error, request, reply) => {

@@ -272,6 +272,7 @@ model Customer {
 enum InvoiceType {
   SALE
   POS
+  EXPENSE
   ONLINE
   PURCHASE
   RETURN

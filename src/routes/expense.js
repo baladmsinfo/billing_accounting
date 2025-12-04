@@ -1,5 +1,6 @@
 'use strict'
 const checkRole = require('../utils/checkRole')
+const { getAccountId } = require('../services/invoiceService')
 
 module.exports = async function (fastify, opts) {
 
@@ -26,77 +27,133 @@ module.exports = async function (fastify, opts) {
 
     fastify.post(
         '/',
-        {
-            preHandler: checkRole("ADMIN"),
-        },
-
+        { preHandler: checkRole("ADMIN") },
         async (request, reply) => {
             try {
-                const { category, date, amount, note } = request.body
+                const { category, date, amount, note, taxRateId } = request.body
                 const companyId = request.user.companyId
 
-                // 🔍 1) Fetch the expense account
                 const expenseAccount = await fastify.prisma.account.findFirst({
-                    where: {
-                        companyId,
-                        type: 'EXPENSE',
-                        name: { contains: category, mode: 'insensitive' }
-                    }
+                    where: { companyId, type: 'EXPENSE', name: { contains: category, mode: 'insensitive' } }
                 })
-
-                if (!expenseAccount) {
-                    return reply.code(400).send({
-                        statusCode: '01',
-                        message: `Expense account for category '${category}' not found`
-                    })
-                }
 
                 const cashAccount = await fastify.prisma.account.findFirst({
-                    where: {
-                        companyId,
-                        type: 'ASSET',
-                        name: { contains: 'Cash', mode: 'insensitive' }
-                    }
+                    where: { companyId, type: 'ASSET', name: { contains: 'Cash', mode: 'insensitive' } }
                 })
 
-                if (!cashAccount) {
-                    return reply.code(400).send({
-                        statusCode: '01',
-                        message: 'Cash/Bank account not found'
-                    })
+                if (!expenseAccount || !cashAccount) {
+                    return reply.code(400).send({ statusCode: '01', message: 'Required accounts not found' })
                 }
 
-                const created = await fastify.prisma.$transaction(async (tx) => {
-                    const debit = await tx.journalEntry.create({
+                if (!taxRateId) {
+                    await fastify.prisma.$transaction(async (tx) => {
+                        await tx.journalEntry.create({
+                            data: {
+                                companyId,
+                                date: new Date(date),
+                                description: note ?? `${category} Expense`,
+                                debit: amount,
+                                credit: 0,
+                                accountId: expenseAccount.id
+                            }
+                        })
+
+                        await tx.journalEntry.create({
+                            data: {
+                                companyId,
+                                date: new Date(date),
+                                description: note ?? `${category} Expense Payment`,
+                                debit: 0,
+                                credit: amount,
+                                accountId: cashAccount.id
+                            }
+                        })
+                    })
+
+                    return reply.send({ statusCode: '00', message: 'Expense added successfully' })
+                }
+
+                const invoice = await fastify.prisma.$transaction(async (tx) => {
+                    const tax = await tx.taxRate.findUnique({ where: { id: taxRateId } })
+                    if (!tax) throw new Error('Tax rate not found')
+
+                    const taxAmount = (amount * tax.rate) / 100
+                    const total = amount + taxAmount
+
+                    // 1️⃣ Create invoice (type → EXPENSE)
+                    const inv = await tx.invoice.create({
                         data: {
                             companyId,
                             date: new Date(date),
-                            description: note ?? `${category} Expense`,
+                            dueDate: new Date(date),
+                            type: 'EXPENSE',
+                            status: 'PAID',
+                            totalAmount: total,
+                            taxAmount,
+                            invoiceNumber: `EXP-${Date.now()}`,
+                        },
+                    })
+
+                    // 2️⃣ Create invoice tax
+                    await tx.invoiceTax.create({
+                        data: {
+                            invoiceId: inv.id,
+                            companyId,
+                            taxRateId,
+                            invoiceType: 'EXPENSE',
+                            amount: taxAmount,
+                        },
+                    })
+
+                    // 3️⃣ Journal entries
+                    const description = note ?? `Expense Invoice ${inv.invoiceNumber}`
+                    const taxPayableAccountId = await getAccountId(tx, companyId, 'Tax Payable')
+
+                    // Expense (Debit)
+                    await tx.journalEntry.create({
+                        data: {
+                            companyId,
+                            date: new Date(date),
+                            description,
                             debit: amount,
                             credit: 0,
-                            accountId: expenseAccount.id
-                        }
+                            accountId: expenseAccount.id,
+                        },
                     })
 
-                    const credit = await tx.journalEntry.create({
+                    // Tax Payable (Debit)
+                    await tx.journalEntry.create({
                         data: {
                             companyId,
                             date: new Date(date),
-                            description: note ?? `${category} Expense Payment`,
-                            debit: 0,
-                            credit: amount,
-                            accountId: cashAccount.id
-                        }
+                            description,
+                            debit: taxAmount,
+                            credit: 0,
+                            accountId: taxPayableAccountId,
+                        },
                     })
 
-                    return { debit, credit }
+                    // Cash/Bank (Credit)
+                    await tx.journalEntry.create({
+                        data: {
+                            companyId,
+                            date: new Date(date),
+                            description,
+                            debit: 0,
+                            credit: total,
+                            accountId: cashAccount.id,
+                        },
+                    })
+
+                    return inv
                 })
 
-                return reply.code(201).send({
+                return reply.send({
                     statusCode: '00',
-                    message: 'Expense created successfully',
-                    data: created
+                    message: 'Expense added with tax invoice successfully',
+                    data: invoice
                 })
+
             } catch (err) {
                 fastify.log.error(err)
                 return reply.code(500).send({

@@ -276,6 +276,43 @@ module.exports = async function (fastify) {
         };
     });
 
+    fastify.get("/cart/drafts", {
+        preHandler: checkRole("ADMIN"),
+    }, async (req) => {
+        try {
+            const { companyId } = req.user; 
+
+            const draftCarts = await prisma.cart.findMany({
+                where: {
+                    companyId,
+                    status: "DRAFT"
+                },
+                orderBy: { updatedAt: "desc" },
+                include: {
+                    customer: true,
+                    items: {
+                        include: {
+                            item: { include: { product: true } },
+                            taxRate: true
+                        }
+                    }
+                }
+            });
+
+            return {
+                statusCode: "00",
+                message: "Draft carts fetched successfully",
+                data: draftCarts
+            };
+        } catch (err) {
+            return {
+                statusCode: "99",
+                message: "Failed to fetch draft carts",
+                error: err.message
+            };
+        }
+    });
+
     fastify.post("/cart/save-draft", {
         preHandler: checkRole("ADMIN"),
     }, async (req) => {
@@ -611,7 +648,7 @@ module.exports = async function (fastify) {
                 await tx.journalEntry.create({
                     data: {
                         companyId,
-                        accountId: await getAccountId(tx, companyId, "Accounts Receivable"),
+                        accountId: await getAccountId(tx, companyId, "Cash"),
                         date: new Date(),
                         description,
                         debit: parseFloat(totalAmount.plus(totalTax).toFixed(2)),

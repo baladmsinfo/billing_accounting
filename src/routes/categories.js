@@ -14,7 +14,7 @@ module.exports = async function (fastify, opts) {
 
                 const company = await fastify.prisma.company.findUnique({
                     where: { id: companyId },
-                    select: { trial: true } 
+                    select: { trial: true }
                 })
 
                 if (company?.trial) {
@@ -78,6 +78,69 @@ module.exports = async function (fastify, opts) {
             }
         }
     )
+
+    fastify.delete("/:id", {
+        preHandler: checkRole("ADMIN"),
+    }, async (req) => {
+        const { id } = req.params
+        const companyId = req.user.companyId
+
+        try {
+            // check if category has subcategories
+            const subs = await fastify.prisma.category.findMany({
+                where: { parentId: id, companyId }
+            })
+            if (subs.length > 0) {
+                return { statusCode: "01", message: "Remove subcategories first" }
+            }
+
+            // check if products exist under this category
+            const products = await fastify.prisma.product.findMany({
+                where: { categoryId: id, companyId }
+            })
+            if (products.length > 0) {
+                return { statusCode: "01", message: "Cannot delete — products linked" }
+            }
+
+            await fastify.prisma.category.delete({
+                where: { id }
+            })
+
+            return { statusCode: "00", message: "Category deleted successfully" }
+        } catch (err) {
+            console.error("Delete category error:", err)
+            return { statusCode: "99", message: "Internal error" }
+        }
+    })
+
+
+    fastify.delete("/:id/subcategory", {
+        preHandler: checkRole("ADMIN"),
+    }, async (req) => {
+        const { id } = req.params
+        const companyId = req.user.companyId
+
+        try {
+            // check if subcategory is linked to any products
+            const products = await fastify.prisma.product.findMany({
+                where: { subCategoryId: id, companyId }
+            })
+
+            if (products.length > 0) {
+                return { statusCode: "01", message: "Cannot delete — products linked" }
+            }
+
+            await fastify.prisma.category.delete({
+                where: { id }
+            })
+
+            return { statusCode: "00", message: "Subcategory deleted successfully" }
+        } catch (err) {
+            console.error("Delete subcategory error:", err)
+            return { statusCode: "99", message: "Internal error" }
+        }
+    })
+
 
     fastify.post(
         '/:parentId/subcategory',
@@ -312,52 +375,6 @@ module.exports = async function (fastify, opts) {
                 return reply.code(500).send({
                     statusCode: '99',
                     message: 'Failed to update category',
-                    error: error.message
-                })
-            }
-        }
-    )
-
-    // Delete category
-    fastify.delete(
-        '/:id',
-        {
-            preHandler: checkRole("ADMIN"),
-            schema: {
-                tags: ['Category'],
-                description: 'Delete a category by ID',
-                params: {
-                    type: 'object',
-                    required: ['id'],
-                    properties: {
-                        id: { type: 'string', example: 'cat12345' }
-                    }
-                }
-            }
-        },
-        async (request, reply) => {
-            try {
-                const { id } = request.params
-
-                const category = await fastify.prisma.category.findUnique({ where: { id } })
-                if (!category) {
-                    return reply.code(404).send({
-                        statusCode: '01',
-                        message: 'Category not found'
-                    })
-                }
-
-                await fastify.prisma.category.delete({ where: { id } })
-
-                return reply.code(200).send({
-                    statusCode: '00',
-                    message: 'Category deleted successfully'
-                })
-            } catch (error) {
-                fastify.log.error(error)
-                return reply.code(500).send({
-                    statusCode: '99',
-                    message: 'Failed to delete category',
                     error: error.message
                 })
             }

@@ -350,7 +350,7 @@ module.exports = async function (fastify, opts) {
               price: true,
               quantity: true,
               location: true,
-              taxRates: true
+              taxRate: true
             },
           },
         },
@@ -747,7 +747,7 @@ module.exports = async function (fastify, opts) {
             where: { ...baseFilters, type: 'SALE' },
             include: {
               customer: true,
-              items: { include: { product: true, taxRate: true } },
+              items: { include: { product: true, item: true, taxRate: true } },
               payments: true
             },
             orderBy: { date: 'desc' },
@@ -765,7 +765,7 @@ module.exports = async function (fastify, opts) {
             where: { ...baseFilters, type: 'PURCHASE' },
             include: {
               vendor: true,
-              items: { include: { product: true, taxRate: true } },
+              items: { include: { product: true, item: true, taxRate: true } },
               payments: true
             },
             orderBy: { date: 'desc' },
@@ -783,7 +783,7 @@ module.exports = async function (fastify, opts) {
             where: { ...baseFilters, type: 'POS' },
             include: {
               customer: true,
-              items: { include: { product: true, taxRate: true } },
+              items: { include: { product: true, item: true, taxRate: true } },
               payments: true
             },
             orderBy: { date: 'desc' },
@@ -792,6 +792,24 @@ module.exports = async function (fastify, opts) {
           }),
           fastify.prisma.invoice.count({
             where: { ...baseFilters, type: 'POS' }
+          })
+        ])
+
+        // 🔥 ONLINE
+        const [onlineInvoices, onlineTotal] = await Promise.all([
+          fastify.prisma.invoice.findMany({
+            where: { ...baseFilters, type: 'ONLINE' },
+            include: {
+              customer: true,
+              items: { include: { product: true, item: true, taxRate: true } },
+              payments: true
+            },
+            orderBy: { date: 'desc' },
+            skip,
+            take: limit
+          }),
+          fastify.prisma.invoice.count({
+            where: { ...baseFilters, type: 'ONLINE' }
           })
         ])
 
@@ -824,6 +842,15 @@ module.exports = async function (fastify, opts) {
                 page,
                 limit,
                 totalPages: Math.ceil(posTotal / limit)
+              }
+            },
+            online: {   // 👈 Added ONLINE response
+              invoices: onlineInvoices,
+              pagination: {
+                total: onlineTotal,
+                page,
+                limit,
+                totalPages: Math.ceil(onlineTotal / limit)
               }
             }
           }

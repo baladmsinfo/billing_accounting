@@ -158,4 +158,82 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
+
+  fastify.post(
+    "/tax",
+    {
+      preHandler: checkRole("ADMIN"),
+    },
+    async (req, reply) => {
+      try {
+        const { fromDate, toDate } = req.body;
+
+        const companyId = req.user.companyId;
+
+        const taxes = await fastify.prisma.invoiceTax.findMany({
+          where: {
+            companyId,
+            invoice: {
+              date: {
+                gte: new Date(fromDate),
+                lte: new Date(toDate)
+              }
+            }
+          },
+          include: {
+            invoice: {
+              select: {
+                id: true,
+                invoiceNumber: true,
+                date: true,
+                type: true,
+                customer: { select: { name: true, gstin: true } },
+                vendor: { select: { name: true, gstin: true } },
+                totalAmount: true
+              }
+            },
+            taxRate: true
+          },
+          orderBy: { invoiceId: "asc" }
+        });
+
+        const grouped = taxes.reduce((acc, tx) => {
+          if (!acc[tx.invoiceId]) {
+            acc[tx.invoiceId] = {
+              invoiceId: tx.invoiceId,
+              invoiceNumber: tx.invoice.invoiceNumber,
+              date: tx.invoice.date,
+              invoiceType: tx.invoice.type,
+              totalAmount: tx.invoice.totalAmount,
+              customerName: tx.invoice.customer?.name || null,
+              customerGST: tx.invoice.customer?.gstin || null,
+              vendorName: tx.invoice.vendor?.name || null,
+              vendorGST: tx.invoice.vendor?.gstin || null,
+              taxes: []
+            };
+          }
+          acc[tx.invoiceId].taxes.push({
+            taxName: tx.taxRate.name,
+            taxType: tx.taxRate.type,
+            rate: tx.taxRate.rate,
+            amount: tx.amount
+          });
+          return acc;
+        }, {});
+
+        return reply.send({
+          statusCode: "00",
+          message: "Tax report fetched successfully",
+          data: Object.values(grouped)
+        });
+      } catch (error) {
+        console.error("📌 Tax Report Error:", error);
+        return reply.send({
+          statusCode: "500",
+          message: "Failed to fetch tax report",
+          error: error.message
+        });
+      }
+    }
+  );
 }

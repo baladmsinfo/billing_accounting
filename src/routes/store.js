@@ -20,34 +20,101 @@ module.exports = async function (fastify) {
     // 1. PRODUCT APIs
     // -------------------------------------------------------
 
+    fastify.get("/init/:id", async (req, reply) => {
+
+        const tenant = req.params.id
+
+        try {
+
+            const data = await prisma.company.findUnique({
+                where: { tenant },
+                select: {
+                    id: true,
+                    name: true,
+                    tenant: true,
+                    shortname: true,
+                    currency: true
+                }
+            });
+
+            if (!data) {
+                return reply.code(404).send({
+                    statusCode: "99",
+                    message: "Tenant not found",
+                });
+            }
+
+            return {
+                statusCode: "00",
+                message: "Tenant fetched successfully",
+                data: data,
+            };
+
+        } catch (error) {
+            return reply.code(500).send({
+                statusCode: "99",
+                message: "Failed to fetch tenant",
+                error: error.message,
+            });
+        }
+
+    });
+
     fastify.get("/products", async (req, reply) => {
         try {
-            const page = Number(req.query.page || 1)
-            const take = Number(req.query.take || 20)
-            const skip = (page - 1) * take
+            const page = Number(req.query.page || 1);
+            const take = Number(req.query.take || 20);
+            const skip = (page - 1) * take;
+
+            const { categoryId, subCategoryId, minPrice, maxPrice } = req.query;
+
+            // Build base filter
+            const where = {
+                companyId: req.companyId,
+                ...(categoryId ? { categoryId } : {}),
+                ...(subCategoryId ? { subCategoryId } : {}),
+                ...(minPrice || maxPrice
+                    ? {
+                        items: {
+                            some: {
+                                ...(minPrice ? { price: { gte: Number(minPrice) } } : {}),
+                                ...(maxPrice ? { price: { lte: Number(maxPrice) } } : {}),
+                            },
+                        },
+                    }
+                    : {}),
+            };
 
             const [products, total] = await Promise.all([
-                productSvc.listProducts(fastify.prisma, req.companyId, { skip, take }),
-                fastify.prisma.product.count({
-                    where: { companyId: req.companyId },
+                fastify.prisma.product.findMany({
+                    where,
+                    skip,
+                    take,
+                    include: {
+                        items: true, // include items if needed for price display
+                    },
+                    orderBy: { createdAt: "desc" },
                 }),
-            ])
+                fastify.prisma.product.count({ where }),
+            ]);
 
             return reply.code(200).send({
-                statusCode: '00',
-                message: 'Products fetched successfully',
+                statusCode: "00",
+                message: "Products fetched successfully",
                 data: products,
                 pagination: { page, take, total },
-            })
+            });
         } catch (error) {
-            fastify.log.error(error)
+            fastify.log.error(error);
             return reply.code(500).send({
-                statusCode: '99',
-                message: 'Failed to fetch products',
+                statusCode: "99",
+                message: "Failed to fetch products",
                 error: error.message,
-            })
+            });
         }
     });
+
+
 
     fastify.get("/product/:id", async (req) => {
         return prisma.product.findUnique({
@@ -62,29 +129,41 @@ module.exports = async function (fastify) {
 
     fastify.get("/categories", async (request, reply) => {
         try {
-            const page = Number(request.query.page || 1)
-            const take = Number(request.query.take || 20)
-            const skip = (page - 1) * take
+            const page = Number(request.query.page || 1);
+            const take = Number(request.query.take || 20);
+            const skip = (page - 1) * take;
 
             const categories = await fastify.prisma.category.findMany({
-                where: { companyId: request.companyId, parentId: null },
+                where: {
+                    companyId: request.companyId,
+                    parentId: null
+                },
                 skip,
                 take,
-                include: { children: true }
-            })
+                include: {
+                    children: true,
+
+                    // Return ONLY 10 products per category
+                    products: {
+                        take: 10,
+                        orderBy: { createdAt: "desc" } // Optional sorting
+                    }
+                }
+            });
 
             return reply.code(200).send({
                 statusCode: '00',
                 message: 'Categories fetched successfully',
                 data: categories
-            })
+            });
+
         } catch (error) {
-            fastify.log.error(error)
+            fastify.log.error(error);
             return reply.code(500).send({
                 statusCode: '99',
                 message: 'Failed to fetch categories',
                 error: error.message
-            })
+            });
         }
     });
 
@@ -267,9 +346,7 @@ module.exports = async function (fastify) {
         }
     });
 
-    fastify.post("/cart/add", {
-        preHandler: checkRole("ADMIN"),
-    }, async (req) => {
+    fastify.post("/cart/add", async (req) => {
         const { cartId, itemId, productId } = req.body;
 
         const item = await prisma.item.findUnique({
@@ -311,6 +388,9 @@ module.exports = async function (fastify) {
                     price: item.price,
                     total: item.price,
                     taxRateId: item.taxRateId || null
+                },
+                include: {
+                    product: true
                 }
             });
         }

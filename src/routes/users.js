@@ -2,6 +2,7 @@
 const userService = require('../services/userService')
 const { comparePassword } = require('../utils/hash')
 const { generateApiKey } = require('../utils/keyGenerator')
+const { generateShortTenant,getShortName } = require('../utils/tenant')
 const bcrypt = require('bcrypt');
 const checkRole = require('../utils/checkRole')
 
@@ -148,9 +149,10 @@ module.exports = async function (fastify, opts) {
               city: companyData.city,
               state: companyData.state,
               pincode: companyData.pincode,
-
               companyType: companyData.companyType,
               currencyId: companyData.currencyId,
+              shortname: await generateShortTenant(companyData.name),
+              tenant: await getShortName(companyData.name),
               publicapiKey: generateApiKey(),
               privateapiKey: generateApiKey()
             },

@@ -186,53 +186,105 @@ module.exports = async function (fastify, opts) {
     }
   })
 
-  // List products
-  fastify.get(
-    '/',
-    {
-      preHandler: checkRole("ADMIN"),
-      schema: {
-        tags: ['Product'],
-        description: 'List products with pagination',
-        querystring: {
-          type: 'object',
-          properties: {
-            page: { type: 'integer', example: 1 },
-            take: { type: 'integer', example: 20 },
+  fastify.get("/", async (req, reply) => {
+    try {
+      const { page = 1, limit = 10, search } = req.query;
+      const skip = (page - 1) * limit;
+      const companyId = req.user.companyId;
+
+      const where = {
+        companyId,
+        ...(search && {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { sku: { contains: search, mode: "insensitive" } },
+          ],
+        }),
+      };
+
+      const [products, totalRecords] = await Promise.all([
+        fastify.prisma.product.findMany({
+          where,
+          skip: Number(skip),
+          take: Number(limit),
+          include: {
+            items: true,
+            category: true,
+            subCategory: true,
           },
-        },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const page = Number(request.query.page || 1)
-        const take = Number(request.query.take || 20)
-        const skip = (page - 1) * take
+          orderBy: { createdAt: "desc" }
+        }),
+        fastify.prisma.product.count({ where })
+      ]);
 
-        // fetch products (with items)
-        const [products, total] = await Promise.all([
-          productSvc.listProducts(fastify.prisma, request.user.companyId, { skip, take }),
-          fastify.prisma.product.count({
-            where: { companyId: request.user.companyId },
-          }),
-        ])
+      const totalPages = Math.ceil(totalRecords / limit);
 
-        return reply.code(200).send({
-          statusCode: '00',
-          message: 'Products fetched successfully',
-          data: products,
-          pagination: { page, take, total },
-        })
-      } catch (error) {
-        fastify.log.error(error)
-        return reply.code(500).send({
-          statusCode: '99',
-          message: 'Failed to fetch products',
-          error: error.message,
-        })
-      }
+      return reply.send({
+        statusCode: "00",
+        message: "Products fetched successfully",
+        page: Number(page),
+        limit: Number(limit),
+        totalRecords,
+        totalPages,
+        data: products
+      });
+
+    } catch (error) {
+      return reply.status(500).send({
+        statusCode: "99",
+        message: "Failed to fetch products",
+        error: error.message,
+      });
     }
-  )
+  });
+
+  //   // List products
+  // fastify.get(
+  //   '/',
+  //   {
+  //     preHandler: checkRole("ADMIN"),
+  //     schema: {
+  //       tags: ['Product'],
+  //       description: 'List products with pagination',
+  //       querystring: {
+  //         type: 'object',
+  //         properties: {
+  //           page: { type: 'integer', example: 1 },
+  //           take: { type: 'integer', example: 20 },
+  //         },
+  //       },
+  //     },
+  //   },
+  //   async (request, reply) => {
+  //     try {
+  //       const page = Number(request.query.page || 1)
+  //       const take = Number(request.query.take || 20)
+  //       const skip = (page - 1) * take
+
+  //       // fetch products (with items)
+  //       const [products, total] = await Promise.all([
+  //         productSvc.listProducts(fastify.prisma, request.user.companyId, { skip, take }),
+  //         fastify.prisma.product.count({
+  //           where: { companyId: request.user.companyId },
+  //         }),
+  //       ])
+
+  //       return reply.code(200).send({
+  //         statusCode: '00',
+  //         message: 'Products fetched successfully',
+  //         data: products,
+  //         pagination: { page, take, total },
+  //       })
+  //     } catch (error) {
+  //       fastify.log.error(error)
+  //       return reply.code(500).send({
+  //         statusCode: '99',
+  //         message: 'Failed to fetch products',
+  //         error: error.message,
+  //       })
+  //     }
+  //   }
+  // )
 
   // Get category and sub-category
 

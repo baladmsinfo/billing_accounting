@@ -4,51 +4,33 @@ const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
   // Create customer
+  // Create Customer
   fastify.post(
-    '/',
+    "/",
     {
       preHandler: checkRole("ADMIN"),
-      schema: {
-        tags: ['Customers'],
-        summary: 'Create a new customer',
-        body: {
-          type: 'object',
-          required: ['name', 'email', 'phone'],
-          properties: {
-            name: { type: 'string', example: 'John Doe' },
-            email: { type: 'string', format: 'email', example: 'john@example.com' },
-            phone: { type: 'string', example: '+91-9876543210' },
-            gstin: { type: 'string', example: '22BBBBB1111B2Z6' }
-          },
-          example: {
-            name: 'John Doe',
-            email: 'john@example.com',
-            phone: '+91-9876543210',
-            gstin: '22BBBBB1111B2Z6'
-          }
-        }
-      }
     },
     async (request, reply) => {
       try {
-        const data = { ...request.body, companyId: request.user.companyId }
-        const customer = await svc.createCustomer(fastify.prisma, data)
+        const data = { ...request.body, companyId: request.user.companyId };
+
+        const customer = await svc.createCustomer(fastify.prisma, data);
 
         reply.code(201).send({
-          statusCode: 201,
-          message: 'Customer created successfully',
+          statusCode: "00",
+          message: "Customer created successfully",
           data: customer
-        })
+        });
       } catch (error) {
-        fastify.log.error(error)
+        fastify.log.error(error);
         reply.code(500).send({
-          statusCode: 500,
-          message: 'Failed to create customer',
+          statusCode: "99",
+          message: "Failed to create customer",
           error: error.message
-        })
+        });
       }
     }
-  )
+  );
 
   // List customers
   fastify.get(

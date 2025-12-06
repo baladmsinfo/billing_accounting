@@ -23,7 +23,7 @@ module.exports = async function (fastify, opts) {
             where: { companyId: data.companyId },
           });
 
-          if (totalProducts >= 10) {
+          if (totalProducts >= 25) {
             return reply.code(201).send({
               statusCode: "05",
               message: "Trial limit reached. You can only add 10 products. Please Subscribe a plan to add more products.",
@@ -64,9 +64,15 @@ module.exports = async function (fastify, opts) {
           for (const item of data.items) {
             const createdItem = await fastify.prisma.item.create({
               data: {
-                ...item,
+                variant: item.variant,
+                price: item.price,
+                quantity: item.quantity ?? 0,
+                MRP: item.MRP,
+                location: item.location,
+                taxRateId: item.taxRateId,
                 productId: product.id,
-                companyId: data.companyId
+                companyId: data.companyId,
+                branches: { connect: [{ id: item.branchId }] },
               }
             })
 
@@ -160,7 +166,7 @@ module.exports = async function (fastify, opts) {
           filename: uploaded.filename,
           mimetype: uploaded.type,
           size: uploaded.size,
-          productId: productId || null,  // auto-link
+          productId: productId || null,
         }
       });
 
@@ -208,7 +214,7 @@ module.exports = async function (fastify, opts) {
           skip: Number(skip),
           take: Number(limit),
           include: {
-            items: { include: { branches: true }},
+            items: { include: { branches: true } },
             category: true,
             subCategory: true,
           },
@@ -527,7 +533,7 @@ module.exports = async function (fastify, opts) {
     async (request, reply) => {
       try {
         const { productId } = request.params
-        const { sku, price, taxrate, quantity, branchId } = request.body
+        const { variant, price, taxrate, quantity, branchId } = request.body
         const companyId = request.user.companyId
 
         const product = await fastify.prisma.product.findFirst({
@@ -559,18 +565,17 @@ module.exports = async function (fastify, opts) {
           }
         }
 
-        const itemData = {
-          sku,
-          price,
-          quantity,
-          branchId,
-          companyId,
-          productId
-        }
+      const branchConnect = branchId ? { branches: { connect: [{ id: branchId }] } } : {}
 
-        if (taxrate && tax) {
-          itemData.taxRateId = taxrate
-        }
+      const itemData = {
+        variant,
+        price,
+        quantity,
+        companyId,
+        productId,
+        ...(taxrate && tax ? { taxRateId: taxrate } : {}),
+        ...branchConnect
+      }
 
         const newItem = await fastify.prisma.item.create({
           data: itemData

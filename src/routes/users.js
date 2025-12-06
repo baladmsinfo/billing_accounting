@@ -2,11 +2,11 @@
 const userService = require('../services/userService')
 const { comparePassword } = require('../utils/hash')
 const { generateApiKey } = require('../utils/keyGenerator')
+const { generateShortTenant, getShortName } = require('../utils/tenant')
 const bcrypt = require('bcrypt');
 const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
-
 
   fastify.post("/register", async (request, reply) => {
     try {
@@ -48,6 +48,8 @@ module.exports = async function (fastify, opts) {
           pincode: companyData.pincode,
           companyType: companyData.companyType,
           currencyId: companyData.currencyId,
+          shortname: await generateShortTenant(companyData.name),
+          tenant: await getShortName(companyData.name),
           publicapiKey: generateApiKey(),
           privateapiKey: generateApiKey()
         }
@@ -94,7 +96,7 @@ module.exports = async function (fastify, opts) {
           name: `${company.name} Admin`,
           role: "ADMIN",
           companyId: company.id,
-          branchId: null  
+          branchId: null
         }
       });
 
@@ -105,7 +107,7 @@ module.exports = async function (fastify, opts) {
           name: `${company.name} Store Admin`,
           role: "STOREADMIN",
           companyId: company.id,
-          branchId: branch.id, 
+          branchId: branch.id,
         }
       });
 

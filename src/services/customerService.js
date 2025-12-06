@@ -7,14 +7,35 @@ async function createCustomer(prisma, data) {
       phone: data.phone,
       gstin: data.gstin,
       companyId: data.companyId,
+
+      // Create Customer Address
+      addresses: {
+        create: [
+          {
+            addressLine1: data.addressLine1,
+            addressLine2: data.addressLine2,
+            addressLine3: data.addressLine3,
+            city: data.city,
+            state: data.state,
+            country: data.country,
+            pincode: data.pincode,
+            isDefault: true,
+          }
+        ]
+      },
+
+      // Create default Cart
       carts: {
         create: {
           companyId: data.companyId,
-          status: 'ACTIVE',
-        },
-      },
+          status: "ACTIVE",
+        }
+      }
     },
-    include: { carts: true },
+    include: {
+      addresses: true,
+      carts: true
+    }
   });
 }
 
@@ -23,7 +44,7 @@ async function listCustomers(prisma, companyId, { skip, take }) {
     where: { companyId },
     skip,
     take,
-    include: { carts: true },
+    include: { carts: true , addresses: true},
   });
 }
 

@@ -346,69 +346,172 @@ module.exports = async function (fastify) {
         }
     });
 
-    fastify.post("/cart/add", async (req) => {
+    // fastify.post("/cart/add", async (req) => {
+    //     const { cartId, itemId, productId } = req.body;
+
+    //     const item = await prisma.item.findUnique({
+    //         where: { id: itemId },
+    //     });
+
+    //     if (!item) {
+    //         return {
+    //             statusCode: "01",
+    //             message: "Product Item not found"
+    //         };
+    //     }
+
+    //     let cartItem = await prisma.cartItem.findFirst({
+    //         where: { cartId, itemId }
+    //     });
+
+    //     if (cartItem) {
+    //         // increment qty
+    //         const newQty = cartItem.quantity + 1;
+    //         const baseTotal = newQty * cartItem.price;
+
+    //         await prisma.cartItem.update({
+    //             where: { id: cartItem.id },
+    //             data: {
+    //                 quantity: newQty,
+    //                 total: baseTotal,
+    //                 taxRateId: item.taxRateId || null
+    //             },
+    //             include: {
+    //                 product: true
+    //             }
+    //         });
+    //     } else {
+    //         // create new cart item
+    //         await prisma.cartItem.create({
+    //             data: {
+    //                 cartId,
+    //                 itemId,
+    //                 productId,
+    //                 quantity: 1,
+    //                 price: item.price,
+    //                 total: item.price,
+    //                 taxRateId: item.taxRateId || null
+    //             },
+    //             include: {
+    //                 product: true
+    //             }
+    //         });
+    //     }
+
+    //     const fullCart = await prisma.cart.findUnique({
+    //         where: { id: cartId },
+    //         include: {
+    //             items: {
+    //                 include: { taxRate: true }
+    //             }
+    //         }
+    //     });
+
+    //     return {
+    //         statusCode: "00",
+    //         message: "Item successfully added to cart",
+    //         data: fullCart
+    //     };
+    // });
+
+    fastify.post("/cart/add", async (req, reply) => {
         const { cartId, itemId, productId } = req.body;
 
+        if (!cartId || !itemId || !productId) {
+            return reply.send({
+                statusCode: "01",
+                message: "cartId, itemId, productId are required",
+            });
+        }
+
+        // 1️⃣ Validate item exists
         const item = await prisma.item.findUnique({
             where: { id: itemId },
+            include: { taxRate: true },
         });
 
         if (!item) {
-            return {
+            return reply.send({
                 statusCode: "01",
-                message: "Item not found"
-            };
+                message: "Product Item not found",
+            });
         }
 
+        // 2️⃣ Check if cart item already exists
         let cartItem = await prisma.cartItem.findFirst({
-            where: { cartId, itemId }
+            where: { cartId, itemId },
         });
 
         if (cartItem) {
-            // increment qty
+            // 3️⃣ Increment qty
             const newQty = cartItem.quantity + 1;
-            const baseTotal = newQty * cartItem.price;
 
-            await prisma.cartItem.update({
+            const unitPrice = cartItem.price;
+            const baseTotal = newQty * unitPrice;
+
+            let taxAmount = 0;
+
+            if (item.taxRate) {
+                taxAmount = (baseTotal * item.taxRate.rate) / 100;
+            }
+
+            const finalTotal = baseTotal + taxAmount;
+
+            cartItem = await prisma.cartItem.update({
                 where: { id: cartItem.id },
                 data: {
                     quantity: newQty,
-                    total: baseTotal,
-                    taxRateId: item.taxRateId || null
-                }
+                    total: finalTotal,
+                    taxRateId: item.taxRateId || null,
+                },
+                include: { product: true, taxRate: true },
             });
         } else {
-            // create new cart item
-            await prisma.cartItem.create({
+            // 4️⃣ Create new cart item
+            const unitPrice = item.price;
+            let taxAmount = 0;
+
+            if (item.taxRate) {
+                taxAmount = (unitPrice * item.taxRate.rate) / 100;
+            }
+
+            const finalTotal = unitPrice + taxAmount;
+
+            cartItem = await prisma.cartItem.create({
                 data: {
                     cartId,
                     itemId,
                     productId,
                     quantity: 1,
-                    price: item.price,
-                    total: item.price,
-                    taxRateId: item.taxRateId || null
+                    price: unitPrice,
+                    total: finalTotal,
+                    taxRateId: item.taxRateId || null,
                 },
-                include: {
-                    product: true
-                }
+                include: { product: true, taxRate: true },
             });
         }
 
+        // 5️⃣ Fetch full cart with items
         const fullCart = await prisma.cart.findUnique({
             where: { id: cartId },
             include: {
                 items: {
-                    include: { taxRate: true }
-                }
-            }
+                    include: {
+                        product: true,
+                        taxRate: true,
+                    },
+                    orderBy: { createdAt: "desc" },
+                },
+            },
         });
 
-        return {
+        // 6️⃣ Return final response
+        return reply.send({
             statusCode: "00",
-            message: "Item successfully added to cart",
-            data: fullCart
-        };
+            message: "Item added to cart",
+            cartItem,
+            cart: fullCart,
+        });
     });
 
     // Fetch full cart with items

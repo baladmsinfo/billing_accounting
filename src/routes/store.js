@@ -414,105 +414,157 @@ module.exports = async function (fastify) {
     //     };
     // });
 
-    fastify.post("/cart/add", async (req, reply) => {
-        const { cartId, itemId, productId } = req.body;
+fastify.post("/cart/add", async (req, reply) => {
+  const { cartId, itemId, productId } = req.body;
 
-        if (!cartId || !itemId || !productId) {
-            return reply.send({
-                statusCode: "01",
-                message: "cartId, itemId, productId are required",
-            });
-        }
-
-        // 1️⃣ Validate item exists
-        const item = await prisma.item.findUnique({
-            where: { id: itemId },
-            include: { taxRate: true },
-        });
-
-        if (!item) {
-            return reply.send({
-                statusCode: "01",
-                message: "Product Item not found",
-            });
-        }
-
-        // 2️⃣ Check if cart item already exists
-        let cartItem = await prisma.cartItem.findFirst({
-            where: { cartId, itemId },
-        });
-
-        if (cartItem) {
-            // 3️⃣ Increment qty
-            const newQty = cartItem.quantity + 1;
-
-            const unitPrice = cartItem.price;
-            const baseTotal = newQty * unitPrice;
-
-            let taxAmount = 0;
-
-            if (item.taxRate) {
-                taxAmount = (baseTotal * item.taxRate.rate) / 100;
-            }
-
-            const finalTotal = baseTotal + taxAmount;
-
-            cartItem = await prisma.cartItem.update({
-                where: { id: cartItem.id },
-                data: {
-                    quantity: newQty,
-                    total: finalTotal,
-                    taxRateId: item.taxRateId || null,
-                },
-                include: { product: true, taxRate: true },
-            });
-        } else {
-            // 4️⃣ Create new cart item
-            const unitPrice = item.price;
-            let taxAmount = 0;
-
-            if (item.taxRate) {
-                taxAmount = (unitPrice * item.taxRate.rate) / 100;
-            }
-
-            const finalTotal = unitPrice + taxAmount;
-
-            cartItem = await prisma.cartItem.create({
-                data: {
-                    cartId,
-                    itemId,
-                    productId,
-                    quantity: 1,
-                    price: unitPrice,
-                    total: finalTotal,
-                    taxRateId: item.taxRateId || null,
-                },
-                include: { product: true, taxRate: true },
-            });
-        }
-
-        // 5️⃣ Fetch full cart with items
-        const fullCart = await prisma.cart.findUnique({
-            where: { id: cartId },
-            include: {
-                items: {
-                    include: {
-                        product: true,
-                        taxRate: true,
-                    },
-                    orderBy: { createdAt: "desc" },
-                },
-            },
-        });
-
-        // 6️⃣ Return final response
-        return reply.send({
-            statusCode: "00",
-            message: "Item added to cart",
-            cartItem,
-            cart: fullCart,
-        });
+  if (!cartId || !itemId || !productId) {
+    return reply.send({
+      statusCode: "01",
+      message: "cartId, itemId, productId are required",
     });
+  }
+
+  // 1. Validate item exists (and its taxRate)
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    include: { taxRate: true },
+  });
+
+  if (!item) {
+    return reply.send({
+      statusCode: "01",
+      message: "Product Item not found",
+    });
+  }
+
+  // 2. Check existing cart item
+  let cartItem = await prisma.cartItem.findFirst({
+    where: { cartId, itemId },
+  });
+
+  if (cartItem) {
+    // 3. Increment quantity and update total (no taxAmount column in DB)
+    const newQty = cartItem.quantity + 1;
+    const unitPrice = cartItem.price;
+    const baseTotal = newQty * unitPrice;
+
+    // calculate tax in memory (not persisted to cartItem)
+    const taxAmountForLine = item.taxRate ? (baseTotal * item.taxRate.rate) / 100 : 0;
+    const finalTotal = baseTotal + taxAmountForLine;
+
+    cartItem = await prisma.cartItem.update({
+      where: { id: cartItem.id },
+      data: {
+        quantity: newQty,
+        total: finalTotal,
+        taxRateId: item.taxRateId || null,
+      },
+      include: { product: true, item: true, taxRate: true },
+    });
+  } else {
+    // 4. Create new cart item (no taxAmount column)
+    const unitPrice = item.price;
+    const baseTotal = unitPrice * 1;
+    const taxAmountForLine = item.taxRate ? (baseTotal * item.taxRate.rate) / 100 : 0;
+    const finalTotal = baseTotal + taxAmountForLine;
+
+    cartItem = await prisma.cartItem.create({
+      data: {
+        cartId,
+        itemId,
+        productId,
+        quantity: 1,
+        price: unitPrice,
+        total: finalTotal,
+        taxRateId: item.taxRateId || null,
+      },
+      include: { product: true, item: true, taxRate: true },
+    });
+  }
+
+  // 5. Re-fetch full cart and compute totals in memory
+  const fullCart = await prisma.cart.findUnique({
+    where: { id: cartId },
+    include: {
+      items: {
+        include: {
+          product: true,
+          item: { include: { taxRate: true } }, // ensure item.taxRate is available
+          taxRate: true,
+        },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+
+  if (!fullCart) {
+    return reply.send({
+      statusCode: "01",
+      message: "Cart not found",
+    });
+  }
+
+  // 6. Calculate subtotal, taxTotal, grandTotal
+  let subtotal = 0;
+  let taxTotal = 0;
+
+  for (const ci of fullCart.items) {
+    // prefer ci.price and ci.quantity saved on line
+    const lineBase = (ci.price || 0) * (ci.quantity || 0);
+    subtotal += lineBase;
+
+    // determine tax rate: prefer ci.taxRate, else item.taxRate
+    const taxRate =
+      (ci.taxRate && typeof ci.taxRate.rate === "number" ? ci.taxRate.rate : null) ??
+      (ci.item && ci.item.taxRate && typeof ci.item.taxRate.rate === "number" ? ci.item.taxRate.rate : null);
+
+    if (taxRate != null) {
+      taxTotal += (lineBase * taxRate) / 100;
+    }
+  }
+
+  const grandTotal = subtotal + taxTotal;
+
+  // 7. Persist totals to cart (ensure Cart model has these fields or skip if not)
+  // If your Cart model does not have subtotal/taxTotal/total fields, skip updating DB and just return computed values.
+  const cartUpdateData = {};
+  const cartModelHasTotals = true; // set to false if your Cart model lacks these columns
+
+  // Quick check: only attempt update if those fields exist in DB schema.
+  // (You can change cartModelHasTotals to false if you didn't add columns.)
+  if (cartModelHasTotals) {
+    try {
+      await prisma.cart.update({
+        where: { id: cartId },
+        data: {
+          subtotal: subtotal,
+          taxTotal: taxTotal,
+          total: grandTotal,
+          // optionally update status/updatedAt if needed
+        },
+      });
+    } catch (e) {
+      // If update fails because fields don't exist, ignore and continue returning computed totals.
+      fastify.log.warn("Unable to persist cart totals; returning computed totals only.", e.message);
+    }
+  }
+
+  // attach computed totals to fullCart response (do not mutate DB object permanently)
+  const responseCart = {
+    ...fullCart,
+    subtotal,
+    taxTotal,
+    total: grandTotal,
+  };
+
+  return reply.send({
+    statusCode: "00",
+    message: "Item added to cart",
+    cartItem,
+    cart: responseCart,
+  });
+});
+
 
     // Fetch full cart with items
     fastify.get("/cart/:cartId", async (req) => {
@@ -544,78 +596,239 @@ module.exports = async function (fastify) {
         };
     });
 
-    // Increment quantity
-    fastify.put("/cart/item/:cartItemId/increment", async (req) => {
-        const { cartItemId } = req.params;
+    // ---------------------------------------------
+// INCREMENT CART ITEM
+// ---------------------------------------------
+fastify.put("/cart/item/:cartItemId/increment", async (req, reply) => {
+  const { cartItemId } = req.params;
 
-        const ci = await prisma.cartItem.findUnique({ where: { id: cartItemId } });
-        if (!ci) throw new Error("Cart item not found");
+  // 1️⃣ Fetch cart item with related product/tax
+  const ci = await prisma.cartItem.findUnique({
+    where: { id: cartItemId },
+    include: {
+      item: { include: { taxRate: true, product: true } },
+      taxRate: true,
+      product: true,
+    },
+  });
 
-        return prisma.cartItem.update({
-            where: { id: cartItemId },
-            data: {
-                quantity: ci.quantity + 1,
-                total: (ci.quantity + 1) * ci.price
-            }
-        });
+  if (!ci) {
+    return reply.send({
+      statusCode: "01",
+      message: "Cart item not found",
     });
+  }
+
+  const newQty = ci.quantity + 1;
+  const unitPrice = ci.price;
+
+  // 2️⃣ Calculate line totals
+  const baseTotal = newQty * unitPrice;
+  const taxRate = ci.taxRate?.rate ?? ci.item?.taxRate?.rate ?? 0;
+  const taxAmountForLine = (baseTotal * taxRate) / 100;
+  const finalTotal = baseTotal + taxAmountForLine;
+
+  // 3️⃣ Update cart item
+  const updatedCartItem = await prisma.cartItem.update({
+    where: { id: cartItemId },
+    data: {
+      quantity: newQty,
+      total: finalTotal,
+      taxRateId: ci.taxRateId || ci.item?.taxRateId || null,
+    },
+    include: {
+      product: true,
+      item: { include: { taxRate: true } },
+      taxRate: true,
+    },
+  });
+
+  // 4️⃣ Fetch full cart with all items
+  const fullCart = await prisma.cart.findUnique({
+    where: { id: ci.cartId },
+    include: {
+      items: {
+        include: {
+          product: true,
+          item: { include: { taxRate: true } },
+          taxRate: true,
+        },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+
+  // 5️⃣ Calculate cart totals
+  const summary = calculateCartTotals(fullCart.items);
+
+  const responseCart = {
+    ...fullCart,
+    ...summary,
+  };
+
+  // 6️⃣ Send response
+  return reply.send({
+    statusCode: "00",
+    message: "Cart item incremented",
+    cartItem: updatedCartItem,
+    cart: responseCart,
+  });
+});
 
     // Decrement quantity
-    fastify.put("/cart/item/:cartItemId/decrement", async (req) => {
-        const { cartItemId } = req.params;
+fastify.put("/cart/item/:cartItemId/decrement", async (req, reply) => {
+    const { cartItemId } = req.params;
 
-        const ci = await prisma.cartItem.findUnique({ where: { id: cartItemId } });
-        if (!ci) throw new Error("Cart item not found");
-
-        // if quantity is 1 → remove item
-        if (ci.quantity <= 1)
-            return prisma.cartItem.delete({ where: { id: cartItemId } });
-
-        return prisma.cartItem.update({
-            where: { id: cartItemId },
-            data: {
-                quantity: ci.quantity - 1,
-                total: (ci.quantity - 1) * ci.price
+    // Fetch cart item with tax info
+    const ci = await prisma.cartItem.findUnique({
+        where: { id: cartItemId },
+        include: {
+            item: {
+                include: { taxRate: true }
             }
-        });
+        }
     });
 
-    fastify.delete("/cart/item/:cartItemId", async (req) => {
-        const { cartItemId } = req.params;
-
-        const cartItem = await prisma.cartItem.findUnique({
-            where: { id: cartItemId },
-            select: { cartId: true }
+    if (!ci) {
+        return reply.send({
+            statusCode: "01",
+            message: "Cart item not found"
         });
+    }
 
-        if (!cartItem) {
-            return {
-                statusCode: "01",
-                message: "Cart item not found"
-            };
-        }
-
-        // Delete item
+    // If quantity is 1 → delete item
+    if (ci.quantity <= 1) {
         await prisma.cartItem.delete({ where: { id: cartItemId } });
 
-        // Fetch updated cart
+        // Return updated cart summary
         const updatedCart = await prisma.cart.findUnique({
-            where: { id: cartItem.cartId },
+            where: { id: ci.cartId },
             include: {
                 items: {
-                    include: {
-                        item: { include: { product: true } }
-                    }
+                    include: { taxRate: true, product: true, item: true }
                 }
             }
         });
 
-        return {
+        const summary = calculateCartTotals(updatedCart.items);
+
+        return reply.send({
             statusCode: "00",
-            message: "Cart item deleted successfully",
-            data: updatedCart
-        };
+            message: "Item removed from cart",
+            cart: {
+                ...updatedCart,
+                ...summary
+            }
+        });
+    }
+
+    // New quantity
+    const newQty = ci.quantity - 1;
+    const unitPrice = ci.price;
+    const baseTotal = unitPrice * newQty;
+
+    let taxAmount = 0;
+    if (ci.item?.taxRate) {
+        taxAmount = (baseTotal * ci.item.taxRate.rate) / 100;
+    }
+
+    const finalTotal = baseTotal + taxAmount;
+
+    // Update cart item
+    const updatedItem = await prisma.cartItem.update({
+        where: { id: cartItemId },
+        data: {
+            quantity: newQty,
+            total: finalTotal,
+            taxRateId: ci.item.taxRateId || null
+        },
+        include: {
+            item: true,
+            taxRate: true,
+            product: true
+        }
     });
+
+    // Get full cart updated
+        const fullCart = await prisma.cart.findUnique({
+        where: { id: ci.cartId },
+        include: {
+        items: {
+            include: {
+            product: true,
+            item: { include: { taxRate: true } },
+            taxRate: true,
+            },
+        },
+        },
+    });
+
+    const summary = calculateCartTotals(fullCart.items);
+
+    return reply.send({
+        statusCode: "00",
+        message: "Item decremented",
+        cartItem: updatedItem,
+        cart: {
+            ...fullCart,
+            ...summary
+        }
+    });
+});
+
+// ---------------------------------------------
+// DELETE CART ITEM
+// ---------------------------------------------
+fastify.delete("/cart/item/:cartItemId", async (req, reply) => {
+    const { cartItemId } = req.params;
+
+    // Get cart item with cartId
+    const cartItem = await prisma.cartItem.findUnique({
+        where: { id: cartItemId },
+        select: { cartId: true }
+    });
+
+    if (!cartItem) {
+        return reply.send({
+            statusCode: "01",
+            message: "Cart item not found"
+        });
+    }
+
+    // Delete the item
+    await prisma.cartItem.delete({ where: { id: cartItemId } });
+
+    // Fetch updated cart with nested product, taxRate info
+    const updatedCart = await prisma.cart.findUnique({
+        where: { id: cartItem.cartId },
+        include: {
+            items: {
+                include: {
+                    item: {
+                        include: {
+                            product: true,
+                            taxRate: true,
+                        }
+                    },
+                    product: true,
+                    taxRate: true
+                }
+            }
+        }
+    });
+
+    // Calculate totals
+    const summary = calculateCartTotals(updatedCart.items);
+
+    return reply.send({
+        statusCode: "00",
+        message: "Cart item deleted successfully",
+        cart: {
+            ...updatedCart,
+            ...summary
+        }
+    });
+});
 
     fastify.post("/cart/:cartId/finish", async (req) => {
         const { cartId } = req.params;
@@ -901,3 +1114,24 @@ module.exports = async function (fastify) {
     });
 
 };
+
+// ------------------------------------------------------
+// CART TOTAL CALCULATOR
+// ------------------------------------------------------
+function calculateCartTotals(items) {
+    let subtotal = 0;
+    let tax = 0;
+    let total = 0;
+
+    for (const item of items) {
+        subtotal += item.price * item.quantity;
+
+        if (item.taxRate) {
+            tax += ((item.price * item.quantity) * item.taxRate.rate) / 100;
+        }
+
+        total += item.total;
+    }
+
+    return { subtotal, tax, total };
+}

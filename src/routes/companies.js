@@ -1,143 +1,180 @@
-// 'use strict'
-// const svc = require('../services/companyService')
+'use strict'
+const checkRole = require('../utils/checkRole');
+const bcrypt = require('bcrypt');
 
-// module.exports = async function (fastify, opts) {
-//   fastify.post(
-//     '/',
-//     {
-//       preHandler: [fastify.authenticate, fastify.authorize(['ADMIN', 'SUPERADMIN'])],
-//       schema: {
-//         tags: ['Company'],
-//         summary: 'Create a new company',
-//         body: {
-//           type: 'object',
-//           required: [
-//             'name',
-//             'gstNumber',
-//             'primaryEmail',
-//             'primaryPhoneNo',
-//             'city',
-//             'state',
-//             'pincode',
-//             'companyType'
-//           ],
-//           properties: {
-//             name: { type: 'string', example: 'Example Corp' },
-//             gstNumber: { type: 'string', example: '22AAAAA0000A1Z5' },
-//             primaryEmail: { type: 'string', format: 'email', example: 'contact@example.com' },
-//             secondaryEmail: { type: 'string', format: 'email', example: 'support@example.com' },
-//             primaryPhoneNo: { type: 'string', example: '9876543210' },
-//             secondaryPhoneNo: { type: 'string', example: '0123456789' },
-//             addressLine1: { type: 'string', example: '123 Business Street' },
-//             addressLine2: { type: 'string', example: 'Suite 45' },
-//             addressLine3: { type: 'string', example: 'Tech Park' },
-//             city: { type: 'string', example: 'Chennai' },
-//             state: { type: 'string', example: 'Tamil Nadu' },
-//             pincode: { type: 'integer', example: 600001 },
-//             companyType: { type: 'string', example: 'Private Limited' }
-//           }
-//         }
-//       }
-//     },
-//     async (request, reply) => {
-//       try {
-//         const ownerId = request.user.id;
+module.exports = async function (fastify, opts) {
 
-//         const companyData = { ...request.body, owner: { connect: { id: ownerId } } };
+    fastify.post(
+        "/register/branch",
+        { preHandler: checkRole("ADMIN") },
+        async (request, reply) => {
+            try {
+                const companyId = request.companyId;
 
-//         const company = await svc.createCompany(fastify.prisma, companyData);
+                const {
+                    name: branchName,
+                    addressLine1,
+                    addressLine2,
+                    addressLine3,
+                    city,
+                    state,
+                    pincode,
+                    user
+                } = request.body;
 
-//         reply.code(201).send({
-//           statusCode: 201,
-//           message: 'Company created successfully',
-//           data: company
-//         });
-//       } catch (error) {
-//         fastify.log.error(error);
+                const { email, password, name } = user;
 
-//         reply.code(500).send({
-//           statusCode: 500,
-//           message: 'Failed to create company',
-//           error: error.message
-//         });
-//       }
-//     }
-//   );
+                console.log("Registering branch payload:", {
+                    branchName,
+                    email,
+                    password,
+                    name,
+                    addressLine1,
+                    addressLine2,
+                    addressLine3,
+                    city,
+                    state,
+                    pincode
+                });
 
-//   fastify.post(
-//     '/select-company',
-//     {
-//       preHandler: [fastify.authenticate],
-//       schema: {
-//         tags: ['Company'],
-//         summary: 'Select company for user session',
-//         body: {
-//           type: 'object',
-//           required: ['companyId'],
-//           properties: {
-//             companyId: { type: 'integer', example: 1 }
-//           }
-//         }
-//       }
-//     },
-//     async (request, reply) => {
-//       try {
-//         const { companyId } = request.body
+                const existingUser = await fastify.prisma.user.findUnique({ where: { email } });
+                if (existingUser) {
+                    return reply.send({ statusCode: "02", message: "Email already registered" });
+                }
 
-//         if (!companyId) {
-//           return reply.code(400).send({ statusCode: 400, message: 'companyId is required' })
-//         }
+                const company = await fastify.prisma.company.findUnique({ where: { id: companyId } });
+                if (!company) {
+                    return reply.send({ statusCode: "03", message: "Company not found" });
+                }
 
-//         const user = await fastify.prisma.user.findUnique({
-//           where: { id: request.user.id },
-//           include: { companies: true }
-//         })
+                const branch = await fastify.prisma.branch.create({
+                    data: {
+                        name: branchName,
+                        addressLine1,
+                        addressLine2,
+                        addressLine3,
+                        city,
+                        state,
+                        pincode,
+                        companyId
+                    }
+                });
 
-//         const newToken = fastify.jwt.sign({
-//           id: user.id,
-//           role: user.role,
-//           companyId
-//         })
+                const hashedPassword = await bcrypt.hash(password, 10);
 
-//         return reply.code(200).send({
-//           statusCode: 200,
-//           message: 'Company selected successfully',
-//           token: newToken
-//         })
-//       } catch (err) {
-//         request.log.error(err)
-//         return reply.code(500).send({ statusCode: 500, message: 'Internal server error' })
-//       }
-//     }
-//   )
+                const createdUser = await fastify.prisma.user.create({
+                    data: {
+                        email,
+                        password: hashedPassword,
+                        name,
+                        role: "STOREADMIN",
+                        companyId,
+                        branchId: branch.id
+                    },
+                    include: {
+                        company: true,
+                        branch: true
+                    }
+                });
 
-//   fastify.get(
-//     '/',
-//     {
-//       preHandler: [fastify.authenticate],
-//       schema: {
-//         tags: ['Company'],
-//         summary: 'List companies',
-//       }
-//     },
-//     async (request, reply) => {
-//       try {
-//         const companies = await svc.listCompanies(fastify.prisma, {
-//           skip: 0,
-//           take: 50
-//         });
+                return reply.send({
+                    statusCode: "00",
+                    message: "Branch & Store Admin registered successfully",
+                    data: createdUser
+                });
 
-//         return reply.send({
-//           statusCode: '00',
-//           data: companies
-//         });
-//       } catch (err) {
-//         request.log.error(err);
-//         return reply.status(500).send({
-//           statusCode: '99',
-//           error: 'Failed to fetch companies'
-//         });
-//       }
-//     }
-//   );
-// }
+            } catch (err) {
+                request.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+    fastify.get(
+        "/branches/options",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.user.companyId;
+
+                const branches = await fastify.prisma.branch.findMany({
+                    where: { companyId },
+                    select: { id: true, name: true }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    data: branches
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+    fastify.get(
+        "/branches",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.user.companyId;
+                const { page = 1, limit = 10, search = "" } = req.query;
+
+                const skip = (page - 1) * limit;
+
+                const where = {
+                    companyId,
+                    ...(search
+                        ? {
+                            OR: [
+                                { name: { contains: search, mode: "insensitive" } },
+                                { city: { contains: search, mode: "insensitive" } },
+                                { state: { contains: search, mode: "insensitive" } }
+                            ]
+                        }
+                        : {})
+                };
+
+                const [branches, total] = await Promise.all([
+                    fastify.prisma.branch.findMany({
+                        where,
+                        skip,
+                        take: parseInt(limit),
+                        orderBy: { createdAt: "desc" },
+                        include: {
+                            users: true,
+                        },
+                    }),
+                    fastify.prisma.branch.count({ where })
+                ]);
+
+                return reply.send({
+                    statusCode: "00",
+                    data: branches,
+                    meta: {
+                        total,
+                        page: parseInt(page),
+                        limit: parseInt(limit),
+                        totalPages: Math.ceil(total / limit)
+                    }
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+}

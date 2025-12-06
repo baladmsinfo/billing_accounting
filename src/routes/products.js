@@ -208,7 +208,7 @@ module.exports = async function (fastify, opts) {
           skip: Number(skip),
           take: Number(limit),
           include: {
-            items: true,
+            items: { include: { branches: true }},
             category: true,
             subCategory: true,
           },
@@ -527,7 +527,7 @@ module.exports = async function (fastify, opts) {
     async (request, reply) => {
       try {
         const { productId } = request.params
-        const { sku, price, taxrate, quantity, location } = request.body
+        const { sku, price, taxrate, quantity, branchId } = request.body
         const companyId = request.user.companyId
 
         const product = await fastify.prisma.product.findFirst({
@@ -563,7 +563,7 @@ module.exports = async function (fastify, opts) {
           sku,
           price,
           quantity,
-          location,
+          branchId,
           companyId,
           productId
         }

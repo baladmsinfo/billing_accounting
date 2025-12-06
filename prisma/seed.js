@@ -14,6 +14,9 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const bcrypt = require("bcrypt");
+const { generateApiKey } = require('../src/utils/keyGenerator')
+const { generateShortTenant,getShortName } = require('../src/utils/tenant')
+const currencyData = require('./currencyList.json')
 
 const CONFIG = {
   companies: [
@@ -55,18 +58,48 @@ const intBetween = (a, b) =>
 // ---- Seed functions ----
 
 async function ensureCurrency() {
-  const code = "INR";
-  const existing = await prisma.currency.findUnique({ where: { code } });
-  if (existing) {
-    if (!existing.isDefault) {
-      await prisma.currency.update({ where: { code }, data: { isDefault: true } });
-    }
-    return existing;
+  console.log("Seeding currencies with upsert...");
+
+  if (!currencyData || typeof currencyData !== "object") {
+    throw new Error("currencyData is missing or invalid");
   }
-  return prisma.currency.create({
-    data: { code, name: "Indian Rupee", symbol: "₹", country: "India", isDefault: true },
+
+  const entries = Object.values(currencyData); // Works because your JSON is an object, not an array.
+
+  for (const c of entries) {
+    await prisma.currency.upsert({
+      where: { code: c.code },
+      update: {
+        name: c.name,
+        symbol: c.symbol,
+        country: c.name, // you can change to c.country if available
+        decimalDigits: c.decimal_digits ?? null,
+        rounding: c.rounding ?? null,
+        isDefault: c.code === "INR", // INR is default
+      },
+      create: {
+        code: c.code,
+        name: c.name,
+        symbol: c.symbol,
+        country: c.name,
+        decimalDigits: c.decimal_digits ?? null,
+        rounding: c.rounding ?? null,
+        isDefault: c.code === "INR",
+      }
+    });
+  }
+
+  // Ensure ONLY INR is default
+  await prisma.currency.updateMany({
+    where: { code: { not: "INR" } },
+    data: { isDefault: false }
   });
+
+  console.log("Currency UPSERT completed successfully.");
 }
+
+
+
 
 async function ensureCompany(c) {
   let company = await prisma.company.findFirst({ where: { name: c.name } });
@@ -81,6 +114,10 @@ async function ensureCompany(c) {
         city: c.city,
         state: c.state,
         pincode: c.pincode,
+        shortname: await generateShortTenant(c.name),
+        tenant: await getShortName(c.name),
+        publicapiKey: generateApiKey(),
+        privateapiKey: generateApiKey(),
         companyType: c.companyType,
         currency: { connect: { code: "INR" } },
       },
@@ -94,6 +131,10 @@ async function ensureCompany(c) {
         primaryPhoneNo: c.primaryPhoneNo,
         addressLine1: `Registered Office - ${c.city}`,
         city: c.city,
+        shortname: await generateShortTenant(c.name),
+        tenant: await getShortName(c.name),
+        publicapiKey: generateApiKey(),
+        privateapiKey: generateApiKey(),
         state: c.state,
         pincode: c.pincode,
         companyType: c.companyType,

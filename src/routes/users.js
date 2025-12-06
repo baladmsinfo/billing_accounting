@@ -7,6 +7,7 @@ const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
 
+
   fastify.post("/register", async (request, reply) => {
     try {
       const {

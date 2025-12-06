@@ -50,6 +50,8 @@ model Currency {
   name      String
   symbol    String
   country   String
+  decimalDigits Int?
+  rounding   Int?
   isDefault Boolean @default(true)
 
   companies Company[]
@@ -61,6 +63,8 @@ model Currency {
 model Company {
   id            String         @id @default(uuid())
   name          String
+  tenant        String?        @unique
+  shortname     String?
   gstNumber     String?
   privateapiKey String?        @unique
   publicapiKey  String?        @unique

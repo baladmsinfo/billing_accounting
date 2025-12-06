@@ -94,17 +94,20 @@ fastify.after(async () => {
   fastify.register(require('./plugins/auth'))
 
   fastify.addHook("preHandler", async (req, reply) => {
+    console.log("Request URL:", req.raw.url);
     let publicPaths;
-    if (fastify.config.ENV === "development") {
+    if (fastify.config.NODE_ENV === "development") {
       publicPaths = [
+        "/api/store/init",
         "/api/users/login",
         "/api/users/send-otp",
         "/api/users/verify-otp",
         "/api/users/register",
         "/api/users/currencies"
       ];
-    } else {
+    } else {  
       publicPaths = [
+        "api/store/init",
         "/api/users/login",
         "/api/users/send-otp",
         "/api/users/forgotpassword",
@@ -115,6 +118,8 @@ fastify.after(async () => {
         "/api/users/currencies"
       ];
     }
+    console.log("ENV",fastify.config.ENV)
+    console.log(publicPaths, "public paths")
 
     if (publicPaths.some((path) => req.raw.url.startsWith(path))) {
       return;
@@ -127,8 +132,13 @@ fastify.after(async () => {
       const bearer = req.headers["authorization"]?.split(" ")[1];
 
       if (apiKey) {
-        const company = await fastify.prisma.company.findUnique({
-          where: { publicapiKey: apiKey },
+        const company = await fastify.prisma.company.findFirst({
+          where: {
+            OR: [
+              { publicapiKey: apiKey },
+              { tenant: apiKey }
+            ]
+          },
           include: {
             users: true,
             currency: true,

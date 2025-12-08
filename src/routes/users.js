@@ -55,7 +55,7 @@ module.exports = async function (fastify, opts) {
           addressLine3: companyData.addressLine3,
           city: companyData.city,
           state: companyData.state,
-          pincode: companyData.pincode,
+          pincode: Number(companyData.pincode),
           companyType: companyData.companyType,
           currencyId: companyData.currencyId,
           shortname: await generateShortTenant(companyData.name),

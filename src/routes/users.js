@@ -21,7 +21,6 @@ module.exports = async function (fastify, opts) {
   fastify.post("/register", async (request, reply) => {
     try {
       const {
-        password,
         company: companyData
       } = request.body;
 
@@ -100,6 +99,8 @@ module.exports = async function (fastify, opts) {
       // generate password for branch admin
       const branchPassword = generateRandomPassword();
 
+      const password = generateRandomPassword();
+
       const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -135,14 +136,14 @@ module.exports = async function (fastify, opts) {
         password: password,
       });
 
-      await enqueueUserRegistrationEmail({
-        to: secondaryEmail,
-        name: branch.name,
-        role: "STOREADMIN",
-        email: secondaryEmail,
-        mobile_no: secondaryPhoneNo,
-        password: branchPassword,
-      });
+      // await enqueueUserRegistrationEmail({
+      //   to: secondaryEmail,
+      //   name: branch.name,
+      //   role: "STOREADMIN",
+      //   email: secondaryEmail,
+      //   mobile_no: secondaryPhoneNo,
+      //   password: branchPassword,
+      // });
 
       return reply.send({
         statusCode: "00",

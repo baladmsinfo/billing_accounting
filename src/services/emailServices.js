@@ -115,7 +115,7 @@ async function enqueueUserRegistrationEmail({
     await emailQueue
         .add("sendRegistrationEmail", {
             to,
-            subject: "Welcome to Our Institution!",
+            subject: role === "ADMIN" ? "Welcome to Bucksbox - Your Account Details" : "Branch Admin Account Created - Your Login Details",
             html,
         })
         .then((data) => {

@@ -13,34 +13,83 @@ RUN npx prisma generate
 # Copy app source
 COPY . .
 
-# Run migrations and start Fastify
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+EXPOSE 3000
+
+# Run migrations, then run seeds (Currency first), then start server
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
+FROM node:20
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Prisma client setup
+COPY prisma ./prisma
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+RUN npx prisma generate
+
+# Copy app source
+COPY . .
 
 EXPOSE 3000
 
-# FROM node:20
+# Run migrations, then run seeds (Currency first), then start server
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
+FROM node:20
+WORKDIR /app
 
-# WORKDIR /app
+# Install dependencies
+COPY package*.json ./
+RUN npm install
 
-# # Copy only package files first (to use Docker cache)
-# COPY package*.json ./
+# Prisma client setup
+COPY prisma ./prisma
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+RUN npx prisma generate
 
-# # Install dependencies
-# RUN npm install
+# Copy app source
+COPY . .
 
-# # Copy Prisma schema
-# COPY prisma ./prisma
+EXPOSE 3000
 
-# # --- FIX FOR PRISMA ENGINE DOWNLOAD ERROR ---
-# ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
-# # --------------------------------------------
-# RUN npx prisma generate
+# Run migrations, then run seeds (Currency first), then start server
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
+FROM node:20
+WORKDIR /app
 
-# # Copy the entire app source
-# COPY . .
+# Install dependencies
+COPY package*.json ./
+RUN npm install
 
-# # Expose port
-# EXPOSE 3000
+# Prisma client setup
+COPY prisma ./prisma
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+RUN npx prisma generate
 
-# # Run Prisma migrations and start server
-# CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+# Copy app source
+COPY . .
+
+EXPOSE 3000
+
+# Run migrations, then run seeds (Currency first), then start server
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
+FROM node:20
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Prisma client setup
+COPY prisma ./prisma
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+RUN npx prisma generate
+
+# Copy app source
+COPY . .
+
+EXPOSE 3000
+
+# Run migrations, then run seeds (Currency first), then start server
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]

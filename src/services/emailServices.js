@@ -3,163 +3,164 @@ const path = require("path");
 const { emailQueue } = require("../queues/email.queue");
 
 function loadTemplate(name, vars) {
-  let tpl = fs.readFileSync(
-    path.join(__dirname, "../templates", name),
-    "utf-8"
-  );
-  Object.entries(vars).forEach(([k, v]) => {
-    tpl = tpl.replace(new RegExp(`{{${k}}}`, "g"), v);
-  });
-  return tpl;
+    let tpl = fs.readFileSync(
+        path.join(__dirname, "../templates", name),
+        "utf-8"
+    );
+    Object.entries(vars).forEach(([k, v]) => {
+        tpl = tpl.replace(new RegExp(`{{${k}}}`, "g"), v);
+    });
+    return tpl;
 }
 
 async function enqueuePaymentEmail(
-  type,
-  {
-    to,
-    studentName,
-    institutionName,
-    institutionEmail,
-    department,
-    totalDue,
-    totalPaid,
-    studentRollNo,
-    paymentMethod,
-    invoiceId,
-    amount,
-    academicYear,
-    date,
-  }
-) {
-  console.log("Email type:", type);
-  const balanceDue = totalDue - totalPaid;
-
-  const balanceLabel = balanceDue <= 0 ? "Nil" : `₹${balanceDue}`;
-  const balanceColor = balanceDue <= 0 ? "#047857" : "#dc2626";
-
-  const templateFile =
-    type === "paid" || type === "partial"
-      ? "payment-success.html"
-      : "payment-failed.html";
-
-  const formattedDate = new Date(date).toLocaleString("en-IN", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  const html = loadTemplate(templateFile, {
-    studentName,
-    studentRollNo,
-    invoiceId: String(invoiceId).padStart(8, "0"),
-    totalDue,
-    totalPaid,
-    amount,
-    balanceLabel,
-    balanceColor,
-    paymentMethod,
-    paidAt: formattedDate,
-    department,
-    institutionName,
-    academicYear,
-    year: new Date().getFullYear(),
-  });
-
-  await emailQueue.add(
-    "sendPaymentReceipt",
+    type,
     {
-      institutionName: institutionName,
-      institutionEmail: institutionEmail,
-      to,
-      subject:
-        type === "paid" || type === "partial"
-          ? "Payment Success Confirmation"
-          : "Payment Failure Notification",
-      html,
-    },
-    {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 60000 },
+        to,
+        studentName,
+        institutionName,
+        institutionEmail,
+        department,
+        totalDue,
+        totalPaid,
+        studentRollNo,
+        paymentMethod,
+        invoiceId,
+        amount,
+        academicYear,
+        date,
     }
-  );
+) {
+    console.log("Email type:", type);
+    const balanceDue = totalDue - totalPaid;
+
+    const balanceLabel = balanceDue <= 0 ? "Nil" : `₹${balanceDue}`;
+    const balanceColor = balanceDue <= 0 ? "#047857" : "#dc2626";
+
+    const templateFile =
+        type === "paid" || type === "partial"
+            ? "payment-success.html"
+            : "payment-failed.html";
+
+    const formattedDate = new Date(date).toLocaleString("en-IN", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+    });
+
+    const html = loadTemplate(templateFile, {
+        studentName,
+        studentRollNo,
+        invoiceId: String(invoiceId).padStart(8, "0"),
+        totalDue,
+        totalPaid,
+        amount,
+        balanceLabel,
+        balanceColor,
+        paymentMethod,
+        paidAt: formattedDate,
+        department,
+        institutionName,
+        academicYear,
+        year: new Date().getFullYear(),
+    });
+
+    await emailQueue.add(
+        "sendPaymentReceipt",
+        {
+            institutionName: institutionName,
+            institutionEmail: institutionEmail,
+            to,
+            subject:
+                type === "paid" || type === "partial"
+                    ? "Payment Success Confirmation"
+                    : "Payment Failure Notification",
+            html,
+        },
+        {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 60000 },
+        }
+    );
 }
 
 async function enqueueUserRegistrationEmail({
-  to,
-  name,
-  institutiontype,
-  email,
-  password,
-  mobile_no,
-  address_line1,
-  address_line2,
-  address_line3,
-}) {
-  const html = loadTemplate("user_registration_template.html", {
+    to,
     name,
-    institutiontype,
+    role,
     email,
     mobile_no,
     password,
-    address_line1,
-    address_line2,
-    address_line3,
-  });
+}) {
+    let templateFile =
+        role === "ADMIN"
+            ? "company_admin_registration.html"
+            : "branch_admin_registration.html";
 
-  await emailQueue
-    .add("sendRegistrationEmail", {
-      to,
-      subject: "Welcome to Our Institution!",
-      html,
-    })
-    .then((data) => {
-      console.log("✅ Email job added:", data.name, data.id);
-    })
-    .catch((error) => {
-      console.log("❌ Error adding email job:", error);
+    const html = loadTemplate(templateFile, {
+        to,
+        name,
+        role,
+        email,
+        mobile_no,
+        password,
+        base_url: process.env.WEB_URL || "http://localhost:3008"
     });
+
+    await emailQueue
+        .add("sendRegistrationEmail", {
+            to,
+            subject: "Welcome to Our Institution!",
+            html,
+        })
+        .then((data) => {
+            console.log("✅ Email job added:", data.name, data.id);
+        })
+        .catch((error) => {
+            console.log("❌ Error adding email job:", error);
+        });
 }
 
 async function sendForgotPasswordEmail({ to, institutionName, resetLink, year }) {
-  const templateFile = "forgot_password_template.html";
+    const templateFile = "forgot_password_template.html";
 
-  const html = loadTemplate(templateFile, {
-    institutionName,
-    resetLink,
-    year,
-  });
+    const html = loadTemplate(templateFile, {
+        institutionName,
+        resetLink,
+        year,
+    });
 
-  await emailQueue.add(
-    "sendForgotPasswordEmail",
-    {
-      to,
-      cc: "dglnandha@gmail.com",
-      subject: "Reset your password",
-      html,
-    },
-    {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 60000 },
-    }
-  );
-  console.log("📧 Forgot password email queued for", to);
+    await emailQueue.add(
+        "sendForgotPasswordEmail",
+        {
+            to,
+            cc: "dglnandha@gmail.com",
+            subject: "Reset your password",
+            html,
+        },
+        {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 60000 },
+        }
+    );
+    console.log("📧 Forgot password email queued for", to);
 }
 
 async function sendDueBillEmail({ to, name, invoiceId, token, dueDate, totalAmount, feeRecords, institutionName, phone_no, fastify }) {
-  const formattedDate = new Date(dueDate).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+    const formattedDate = new Date(dueDate).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
 
-  const feeTableRows = feeRecords
-    .map(
-      (fr) => `
+    const feeTableRows = feeRecords
+        .map(
+            (fr) => `
     <tr>
       <td>${fr.feeType || "-"}</td>
       <td>${fr.feeFrequency}</td>
@@ -168,14 +169,14 @@ async function sendDueBillEmail({ to, name, invoiceId, token, dueDate, totalAmou
       <td>${fr.paidAmount || 0}</td>
     </tr>
   `
-    )
-    .join("");
+        )
+        .join("");
 
-  const paymentUrl = `${process.env.SWAGGER_URL}/bill?token=${encodeURIComponent(token)}`
-  
-  // const paymentUrl = `${process.env.FRONTEND_URL}/payment?token=${encodeURIComponent(token)}`;
+    const paymentUrl = `${process.env.SWAGGER_URL}/bill?token=${encodeURIComponent(token)}`
 
-  const html = `
+    // const paymentUrl = `${process.env.FRONTEND_URL}/payment?token=${encodeURIComponent(token)}`;
+
+    const html = `
     <p>Dear ${name},</p>
     <p>This is a reminder that you have a pending invoice <strong>#${invoiceId}</strong> due on <strong>${formattedDate}</strong>.</p>
     <p><strong>Total Amount:</strong> ₹${totalAmount}</p>
@@ -206,57 +207,57 @@ async function sendDueBillEmail({ to, name, invoiceId, token, dueDate, totalAmou
     <p>Thank you,<br/>Accounts Department</p>
   `;
 
-  await emailQueue.add(
-    "sendDueBillEmail",
-    {
-      from: "support@bucksbox.in",
-      to,
-      cc: "dglnandha@gmail.com",
-      subject: `Invoice Due Reminder - Invoice #${invoiceId}`,
-      html,
-    },
-    {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 60000 },
-    }
-  );
-  console.log("📧 Due bill email queued for", to);
+    await emailQueue.add(
+        "sendDueBillEmail",
+        {
+            from: "support@bucksbox.in",
+            to,
+            cc: "dglnandha@gmail.com",
+            subject: `Invoice Due Reminder - Invoice #${invoiceId}`,
+            html,
+        },
+        {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 60000 },
+        }
+    );
+    console.log("📧 Due bill email queued for", to);
 
-  // SMS payment link
+    // SMS payment link
 
-  const data = {
-    phone_no: phone_no,
-    customer: name,
-    institution: institutionName,
-    paymentLink: paymentUrl,
-  };
+    const data = {
+        phone_no: phone_no,
+        customer: name,
+        institution: institutionName,
+        paymentLink: paymentUrl,
+    };
 
-  const result = await fastify.gupshupsms.sendPaymentLink(data);
+    const result = await fastify.gupshupsms.sendPaymentLink(data);
 
-  console.log("SMS payment link result:", result);
+    console.log("SMS payment link result:", result);
 }
 
 async function sendPaymentLink({
-  to,
-  name,
-  invoiceId,
-  dueDate,
-  totalAmount,
-  feeRecords,
-  token,
-  phone_no,
-  institutionName,
-  fastify
+    to,
+    name,
+    invoiceId,
+    dueDate,
+    totalAmount,
+    feeRecords,
+    token,
+    phone_no,
+    institutionName,
+    fastify
 }) {
-  const formattedDate = new Date(dueDate).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+    const formattedDate = new Date(dueDate).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    });
 
-  const feeTableRows = feeRecords
-    .map(
-      (fr) => `
+    const feeTableRows = feeRecords
+        .map(
+            (fr) => `
       <tr>
         <td>${fr.feeType || "-"}</td>
         <td>${fr.feeFrequency || "-"}</td>
@@ -265,14 +266,14 @@ async function sendPaymentLink({
         <td>₹${fr.paidAmount || 0}</td>
       </tr>
     `
-    )
-    .join("");
+        )
+        .join("");
 
-  const paymentUrl = `${process.env.SWAGGER_URL}/bill?token=${encodeURIComponent(token)}`;
+    const paymentUrl = `${process.env.SWAGGER_URL}/bill?token=${encodeURIComponent(token)}`;
 
-  // const paymentUrl = `${process.env.FRONTEND_URL}/payment?token=${encodeURIComponent(token)}`;
+    // const paymentUrl = `${process.env.FRONTEND_URL}/payment?token=${encodeURIComponent(token)}`;
 
-  const html = `
+    const html = `
   <p>Dear ${name},</p>
   <p>Your invoice <strong>#${invoiceId}</strong> is due on 
      <strong>${formattedDate}</strong>.</p>
@@ -305,55 +306,55 @@ async function sendPaymentLink({
   <p>Thank you,<br/>Accounts Department</p>
 `;
 
-  console.log("Payment URL:", paymentUrl);
+    console.log("Payment URL:", paymentUrl);
 
-  // 👇 queue the email job (BullMQ / Bull)
-  await emailQueue.add(
-    "sendPaymentLink",
-    {
-      from: "support@bucksbox.in",
-      to,
-      cc: "dglnandha@gmail.com",
-      subject: `Invoice Payment Link - Invoice #${invoiceId}`,
-      html,
-    },
-    {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 60000 }, // retry with exponential backoff
-    }
-  );
+    // 👇 queue the email job (BullMQ / Bull)
+    await emailQueue.add(
+        "sendPaymentLink",
+        {
+            from: "support@bucksbox.in",
+            to,
+            cc: "dglnandha@gmail.com",
+            subject: `Invoice Payment Link - Invoice #${invoiceId}`,
+            html,
+        },
+        {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 60000 }, // retry with exponential backoff
+        }
+    );
 
-  console.log("📧 Payment link email queued for", to);
+    console.log("📧 Payment link email queued for", to);
 
-  // SMS payment link
+    // SMS payment link
 
-  const data = {
-    phone_no: phone_no,
-    customer: name,
-    institution: institutionName,
-    paymentLink: paymentUrl,
-  };
+    const data = {
+        phone_no: phone_no,
+        customer: name,
+        institution: institutionName,
+        paymentLink: paymentUrl,
+    };
 
-  const result = await fastify.gupshupsms.sendPaymentLink(data);
+    const result = await fastify.gupshupsms.sendPaymentLink(data);
 
-  console.log("SMS payment link result:", result);
+    console.log("SMS payment link result:", result);
 
 }
 
 async function sendStudentWelcomeEmail({ to, student, password }) {
-  const {
-    firstName,
-    lastName,
-    email,
-    department,
-    course,
-    class: studentClass,
-    institution,
-  } = student;
+    const {
+        firstName,
+        lastName,
+        email,
+        department,
+        course,
+        class: studentClass,
+        institution,
+    } = student;
 
-  const fullName = `${firstName} ${lastName || ""}`.trim();
+    const fullName = `${firstName} ${lastName || ""}`.trim();
 
-  const html = `
+    const html = `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; background: #f9f9f9; border-radius: 10px;">
     <h2 style="color: #2c3e50;">Welcome to ${institution?.name || 'Our Institution'}, ${fullName}</h2>
     <!-- Institution Details -->
@@ -364,7 +365,7 @@ async function sendStudentWelcomeEmail({ to, student, password }) {
       <p><strong>Phone:</strong> ${institution?.primary_mobile_no || 'N/A'}</p>
       <p><strong>Address:</strong> 
         ${[institution?.address_line1, institution?.address_line2, institution?.address_line3]
-      .filter(Boolean).join(', ') || 'N/A'}
+            .filter(Boolean).join(', ') || 'N/A'}
       </p>
     </div>
     <!-- Course Details -->
@@ -395,29 +396,29 @@ async function sendStudentWelcomeEmail({ to, student, password }) {
   </div>
   `;
 
-  await emailQueue.add(
-    "sendStudentWelcomeEmail",
-    {
-      from: "support@bucksbox.in",
-      to,
-      cc: "dglnandha@gmail.com",
-      subject: "🎓 Welcome to Our Institution – Your Login Credentials",
-      html,
-    },
-    {
-      attempts: 3,
-      backoff: { type: "exponential", delay: 60000 },
-    }
-  );
-  console.log("📧 Welcome email queued for", to);
+    await emailQueue.add(
+        "sendStudentWelcomeEmail",
+        {
+            from: "support@bucksbox.in",
+            to,
+            cc: "dglnandha@gmail.com",
+            subject: "🎓 Welcome to Our Institution – Your Login Credentials",
+            html,
+        },
+        {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 60000 },
+        }
+    );
+    console.log("📧 Welcome email queued for", to);
 }
 
 module.exports = {
-  enqueuePaymentEmail,
-  enqueueUserRegistrationEmail,
-  sendForgotPasswordEmail,
-  loadTemplate,
-  sendDueBillEmail,
-  sendPaymentLink,
-  sendStudentWelcomeEmail
+    enqueuePaymentEmail,
+    enqueueUserRegistrationEmail,
+    sendForgotPasswordEmail,
+    loadTemplate,
+    sendDueBillEmail,
+    sendPaymentLink,
+    sendStudentWelcomeEmail
 };

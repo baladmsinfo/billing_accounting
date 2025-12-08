@@ -146,6 +146,7 @@ module.exports = async function (fastify) {
                     // Return ONLY 10 products per category
                     products: {
                         take: 10,
+                        include: { items: true },
                         orderBy: { createdAt: "desc" } // Optional sorting
                     }
                 }

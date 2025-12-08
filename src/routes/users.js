@@ -411,6 +411,7 @@ module.exports = async function (fastify, opts) {
         where: { id: request.user.id },
         include: {
           company: true,
+          currency: true
         },
       })
 

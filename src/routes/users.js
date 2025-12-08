@@ -352,8 +352,11 @@ module.exports = async function (fastify, opts) {
       const user = await fastify.prisma.user.findUnique({
         where: { id: request.user.id },
         include: {
-          company: true,
-          currency: true
+          company: {
+            include: {
+              currency: true
+            }
+          }
         },
       })
 

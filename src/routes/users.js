@@ -1,5 +1,6 @@
 'use strict'
 const userService = require('../services/userService')
+const { enqueueUserRegistrationEmail } = require("../services/emailServices");
 const { comparePassword } = require('../utils/hash')
 const { generateApiKey } = require('../utils/keyGenerator')
 const { generateShortTenant, getShortName } = require('../utils/tenant')
@@ -7,6 +8,15 @@ const bcrypt = require('bcrypt');
 const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
+
+  function generateRandomPassword(length = 10) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$&!";
+    let password = "";
+    for (let i = 0; i < length; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
 
   fastify.post("/register", async (request, reply) => {
     try {
@@ -87,6 +97,11 @@ module.exports = async function (fastify, opts) {
         data: defaultAccounts.map(a => ({ ...a, companyId: company.id }))
       });
 
+      // generate password for branch admin
+      const branchPassword = generateRandomPassword();
+
+      const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
+
       const hashedPassword = await bcrypt.hash(password, 10);
 
       const adminUser = await fastify.prisma.user.create({
@@ -103,12 +118,30 @@ module.exports = async function (fastify, opts) {
       const storeUser = await fastify.prisma.user.create({
         data: {
           email: secondaryEmail,
-          password: hashedPassword,
+          password: hashedBranchPassword,
           name: `${company.name} Store Admin`,
           role: "STOREADMIN",
           companyId: company.id,
           branchId: branch.id,
         }
+      });
+
+      await enqueueUserRegistrationEmail({
+        to: primaryEmail,
+        name: company.name,
+        role: "ADMIN",
+        email: primaryEmail,
+        mobile_no: primaryPhoneNo,
+        password: password,
+      });
+
+      await enqueueUserRegistrationEmail({
+        to: secondaryEmail,
+        name: branch.name,
+        role: "STOREADMIN",
+        email: secondaryEmail,
+        mobile_no: secondaryPhoneNo,
+        password: branchPassword,
       });
 
       return reply.send({

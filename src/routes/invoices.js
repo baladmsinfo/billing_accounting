@@ -346,7 +346,7 @@ module.exports = async function (fastify, opts) {
           items: {
             select: {
               id: true,
-              sku: true,
+              variant: true,
               price: true,
               quantity: true,
               location: true,

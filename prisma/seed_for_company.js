@@ -7,9 +7,7 @@ const COMPANY_ID = "d66a3d3d-9c15-422f-9f53-4c6e71cda799";
 async function main() {
     console.log("🌱 Seeding started...");
 
-    // -----------------------------------------
-    // 1️⃣  TAX RATES
-    // -----------------------------------------
+    // 1️⃣ TAX RATES
     const taxRates = [
         { name: "GST 5%", rate: 5, type: "GST" },
         { name: "GST 12%", rate: 12, type: "GST" },
@@ -19,11 +17,15 @@ async function main() {
     ];
 
     for (const t of taxRates) {
-        await prisma.taxRate.upsert({
-            where: { name_companyId: { name: t.name, companyId: COMPANY_ID } },
-            update: {},
-            create: { ...t, companyId: COMPANY_ID },
+        const existing = await prisma.taxRate.findFirst({
+            where: { name: t.name, companyId: COMPANY_ID },
         });
+
+        if (!existing) {
+            await prisma.taxRate.create({
+                data: { ...t, companyId: COMPANY_ID },
+            });
+        }
     }
     console.log("✔ Tax Rates seeded");
 
@@ -59,23 +61,37 @@ async function main() {
     ];
 
     for (const c of categories) {
-        const parent = await prisma.category.upsert({
-            where: { name_companyId: { name: c.name, companyId: COMPANY_ID } },
-            update: {},
-            create: { name: c.name, description: null, companyId: COMPANY_ID },
+        // Check & create parent category if not exists
+        let parent = await prisma.category.findFirst({
+            where: { name: c.name, companyId: COMPANY_ID },
         });
 
-        for (const sub of c.children) {
-            await prisma.category.upsert({
-                where: { name_companyId: { name: sub, companyId: COMPANY_ID } },
-                update: {},
-                create: {
-                    name: sub,
+        if (!parent) {
+            parent = await prisma.category.create({
+                data: {
+                    name: c.name,
                     description: null,
-                    parentId: parent.id,
                     companyId: COMPANY_ID,
                 },
             });
+        }
+
+        // Subcategories seeding
+        for (const sub of c.children) {
+            const existingSub = await prisma.category.findFirst({
+                where: { name: sub, companyId: COMPANY_ID },
+            });
+
+            if (!existingSub) {
+                await prisma.category.create({
+                    data: {
+                        name: sub,
+                        description: null,
+                        parentId: parent.id,
+                        companyId: COMPANY_ID,
+                    },
+                });
+            }
         }
     }
     console.log("✔ 25+ Categories & Subcategories seeded");

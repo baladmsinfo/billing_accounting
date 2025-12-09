@@ -84,6 +84,7 @@ model Company {
   invoiceTax    InvoiceTax[]
   vendors       Vendor[]
   carts         Cart[]
+  banners       Banner[]
   trial         Boolean        @default(true)
   primaryEmail     String
   secondaryEmail   String?
@@ -100,6 +101,25 @@ model Company {
 
   currencyId String
   currency   Currency @relation(fields: [currencyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Banner {
+  id          String   @id @default(uuid())
+  title       String?
+  description String?    // optional
+  imageUrl    String     // required URL
+  manage      Boolean   @default(true) // enable/disable banner
+
+  // Company relation
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  // Image relation
+  imageId String
+  image   Images @relation(fields: [imageId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -517,6 +537,8 @@ model Images {
 
   /// Image may belong to ONE category
   category   Category?
+
+  banners    Banner[] 
 
   /// Still supports product images (optional)
   productId    String?

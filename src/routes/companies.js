@@ -177,4 +177,89 @@ module.exports = async function (fastify, opts) {
             }
         }
     );
+
+    // BANNERS: GET ALL UNDER COMPANY
+    fastify.get(
+        "/banners",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.user.companyId;
+
+                const banners = await fastify.prisma.banner.findMany({
+                    where: { companyId },
+                    orderBy: { createdAt: "desc" },
+                    include: {
+                        image: true     // Include image details
+                    }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Banners fetched successfully",
+                    data: banners
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+
+    // BANNERS: CREATE
+    fastify.post(
+        "/banners",
+        { preHandler: checkRole("ADMIN") },
+        async (request, reply) => {
+            try {
+                const companyId = request.user.companyId;
+                const { title, description, imageUrl, imageId, manage = true } = request.body;
+
+                // Create banner under Company
+                const banner = await fastify.prisma.banner.create({
+                    data: {
+                        title,
+                        description,
+                        imageUrl,
+                        manage,
+                        companyId,
+                        ...(imageId ? { imageId } : {}) // only if imageId provided
+                    }
+                });
+
+                // If imageId provided, bind image to this banner
+                if (imageId) {
+                    await fastify.prisma.images.update({
+                        where: { id: imageId },
+                        data: { banners: { connect: { id: banner.id } } }
+                    });
+                }
+
+                const bannerWithImage = await fastify.prisma.banner.findUnique({
+                    where: { id: banner.id },
+                    include: { image: true }
+                });
+
+                return reply.code(201).send({
+                    statusCode: "00",
+                    message: "Banner created successfully",
+                    data: bannerWithImage
+                });
+
+            } catch (err) {
+                request.log.error(err);
+                return reply.code(500).send({
+                    statusCode: "99",
+                    message: "Failed to create banner",
+                    error: err.message
+                });
+            }
+        }
+    );
+
 }

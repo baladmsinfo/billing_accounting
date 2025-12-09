@@ -34,8 +34,11 @@ model User {
   inviteTokenExpiry DateTime?
   invoiceItemTimelines InvoiceItemTimeline[]
 
-  companyId String? // 👈 Add this field
-  company   Company? @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  branchId String?      
+  branch   Branch? @relation(fields: [branchId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -81,6 +84,7 @@ model Company {
   invoiceTax    InvoiceTax[]
   vendors       Vendor[]
   carts         Cart[]
+  banners       Banner[]
   trial         Boolean        @default(true)
   primaryEmail     String
   secondaryEmail   String?
@@ -102,16 +106,41 @@ model Company {
   updatedAt DateTime @updatedAt
 }
 
+model Banner {
+  id          String   @id @default(uuid())
+  title       String?
+  description String?    // optional
+  imageUrl    String     // required URL
+  manage      Boolean   @default(true) // enable/disable banner
+
+  // Company relation
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  // Image relation
+  imageId String
+  image   Images @relation(fields: [imageId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Branch {
-  id      String  @id @default(uuid())
-  name    String
-  address String?
-  city    String?
-  state   String?
-  pincode Int?
+  id        String   @id @default(uuid())
+  name      String
+  addressLine1 String
+  addressLine2 String?
+  addressLine3 String?
+  city      String?
+  state     String?
+  pincode   Int?
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
+
+  items     Item[]
+
+  users     User[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -236,25 +265,29 @@ enum PaymentMethod {
 }
 
 model Item {
-  id           String      @id @default(uuid())
-  productId    String
-  product      Product     @relation(fields: [productId], references: [id])
-  sku          String
-  price        Float
-  MRP          Float?
-  quantity     Int         @default(0)
-  location     String?
-  companyId    String
-  company      Company     @relation(fields: [companyId], references: [id])
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  sku       String?
+  variant   String?
+  price     Float
+  MRP       Float?
+  quantity  Int        @default(0)
+  location  String?
+  companyId String
+  company   Company   @relation(fields: [companyId], references: [id])
+
   invoiceItems InvoiceItem[]
-  stock        StockLedger[]
-  cartItems    CartItem[]
+  stock       StockLedger[]
+  cartItems   CartItem[]
 
-  taxRateId  String?       
-  taxRate    TaxRate?       @relation(fields: [taxRateId], references: [id])
+  taxRateId String?
+  taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  branches  Branch[]   // 👈 Many-to-many
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model CustomerAddress {
@@ -470,6 +503,7 @@ enum TaxType {
   IGST
   SGST
   CGST
+  VAT
 }
 
 model StockLedger {
@@ -504,6 +538,8 @@ model Images {
 
   /// Image may belong to ONE category
   category   Category?
+
+  banners    Banner[] 
 
   /// Still supports product images (optional)
   productId    String?

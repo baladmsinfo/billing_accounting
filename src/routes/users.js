@@ -1,228 +1,170 @@
 'use strict'
 const userService = require('../services/userService')
+const { enqueueUserRegistrationEmail } = require("../services/emailServices");
 const { comparePassword } = require('../utils/hash')
 const { generateApiKey } = require('../utils/keyGenerator')
-const { generateShortTenant,getShortName } = require('../utils/tenant')
+const { generateShortTenant, getShortName } = require('../utils/tenant')
 const bcrypt = require('bcrypt');
 const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
 
-  fastify.post(
-    "/register",
-    {
-      schema: {
-        tags: ["Auth"],
-        summary: "Register a new user",
-        body: {
-          type: "object",
-          required: ["email", "password", "name", "role"],
-          properties: {
-            email: { type: "string", format: "email" },
-            password: { type: "string" },
-            name: { type: "string" },
-            role: { type: "string", enum: ["ADMIN", "USER"] },
-
-            companyId: { type: "string", nullable: true },
-
-            company: {
-              type: "object",
-              nullable: true,
-              required: [
-                "name",
-                "primaryPhoneNo",
-                "companyType",
-                "currencyId",
-                "addressLine1",
-                "city",
-                "state",
-                "pincode"
-              ],
-              properties: {
-                name: { type: "string" },
-                gstNumber: { type: "string" },
-
-                primaryEmail: { type: "string" },
-                secondaryEmail: { type: "string" },
-
-                primaryPhoneNo: { type: "string" },
-                secondaryPhoneNo: { type: "string" },
-
-                addressLine1: { type: "string" },
-                addressLine2: { type: "string" },
-                addressLine3: { type: "string" },
-
-                city: { type: "string" },
-                state: { type: "string" },
-                pincode: { type: "integer" },
-
-                companyType: { type: "string" },
-
-                currencyId: { type: "string" },
-              },
-            },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const {
-          email,
-          password,
-          name,
-          role,
-          companyId = null,
-          company: companyData,
-        } = request.body;
-
-        if (!email || !password || !name) {
-          return reply.send({
-            statusCode: "01",
-            message: "Missing required fields",
-          });
-        }
-
-        const existingUser = await fastify.prisma.user.findUnique({
-          where: { email },
-        });
-
-        if (existingUser) {
-          return reply.send({
-            statusCode: "02",
-            message: "Email already registered",
-          });
-        }
-
-        let company;
-
-        // CASE 1 
-        if (companyId && companyId.trim() !== "") {
-          company = await fastify.prisma.company.findUnique({
-            where: { id: companyId },
-          });
-
-          if (!company) {
-            return reply.send({
-              statusCode: "03",
-              message: "Company not found",
-            });
-          }
-        }
-
-        // CASE 2 
-        else {
-          if (!companyData || !companyData.currencyId) {
-            return reply.send({
-              statusCode: "01",
-              message:
-                "Company data with currencyId is required when companyId is not provided",
-            });
-          }
-
-          const currency = await fastify.prisma.currency.findUnique({
-            where: { id: companyData.currencyId },
-          });
-
-          if (!currency) {
-            return reply.send({
-              statusCode: "01",
-              message: "Invalid currencyId provided",
-            });
-          }
-
-          company = await fastify.prisma.company.create({
-            data: {
-              name: companyData.name,
-              gstNumber: companyData.gstNumber || null,
-
-              primaryEmail: companyData.primaryEmail || email,
-              secondaryEmail: companyData.secondaryEmail || null,
-
-              primaryPhoneNo: companyData.primaryPhoneNo,
-              secondaryPhoneNo: companyData.secondaryPhoneNo || null,
-
-              addressLine1: companyData.addressLine1,
-              addressLine2: companyData.addressLine2 || null,
-              addressLine3: companyData.addressLine3 || null,
-
-              city: companyData.city,
-              state: companyData.state,
-              pincode: companyData.pincode,
-              companyType: companyData.companyType,
-              currencyId: companyData.currencyId,
-              shortname: await generateShortTenant(companyData.name),
-              tenant: await getShortName(companyData.name),
-              publicapiKey: generateApiKey(),
-              privateapiKey: generateApiKey()
-            },
-          });
-
-          // Default chart of accounts
-          const defaultAccounts = [
-            // Assets
-            { name: 'Cash', type: 'ASSET', code: '1000' },
-            { name: 'Bank', type: 'ASSET', code: '1010' },
-            { name: 'Accounts Receivable', type: 'ASSET', code: '1100' },
-            { name: 'Inventory', type: 'ASSET', code: '1200' },
-            { name: 'Tax Receivable', type: 'ASSET', code: '1300' },
-
-            // Liabilities
-            { name: 'Accounts Payable', type: 'LIABILITY', code: '2000' },
-            { name: 'Tax Payable', type: 'LIABILITY', code: '2100' },
-
-            // Equity
-            { name: 'Owner Equity', type: 'EQUITY', code: '3000' },
-
-            // Income
-            { name: 'Sales Revenue', type: 'INCOME', code: '4000' },
-
-            // Expenses
-            { name: 'Purchases', type: 'EXPENSE', code: '5000' },
-            { name: 'Rent Expense', type: 'EXPENSE', code: '5000' },
-            { name: 'Salaries Expense', type: 'EXPENSE', code: '5100' },
-            { name: 'Utilities Expense', type: 'EXPENSE', code: '5200' },
-          ];
-
-          await fastify.prisma.account.createMany({
-            data: defaultAccounts.map(acc => ({
-              ...acc,
-              companyId: company.id
-            }))
-          })
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const user = await fastify.prisma.user.create({
-          data: {
-            email,
-            password: hashedPassword,
-            name,
-            role,
-            companyId: company.id,
-          },
-          include: { company: true },
-        });
-
-        return reply.send({
-          statusCode: "00",
-          message: "User registered successfully",
-          data: user,
-        });
-
-      } catch (err) {
-        request.log.error(err);
-
-        return reply.send({
-          statusCode: "99",
-          message: "Internal server error",
-          error: err.message,
-        });
-      }
+  function generateRandomPassword(length = 10) {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$&!";
+    let password = "";
+    for (let i = 0; i < length; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-  );
+    return password;
+  }
 
+  fastify.post("/register", async (request, reply) => {
+    try {
+      const {
+        company: companyData
+      } = request.body;
+
+      const { primaryEmail, secondaryEmail, primaryPhoneNo, secondaryPhoneNo } = companyData;
+
+      const existingUsers = await fastify.prisma.user.findMany({
+        where: { email: { in: [primaryEmail, secondaryEmail] } }
+      });
+
+      if (existingUsers.length > 0) {
+        return reply.send({ statusCode: "02", message: "One or both emails already registered" });
+      }
+
+      const currency = await fastify.prisma.currency.findUnique({
+        where: { id: companyData.currencyId }
+      });
+      if (!currency) {
+        return reply.send({ statusCode: "01", message: "Invalid currencyId" });
+      }
+
+      const company = await fastify.prisma.company.create({
+        data: {
+          name: companyData.name,
+          gstNumber: companyData.gstNumber || null,
+          primaryEmail,
+          secondaryEmail,
+          primaryPhoneNo,
+          secondaryPhoneNo,
+          addressLine1: companyData.addressLine1,
+          addressLine2: companyData.addressLine2,
+          addressLine3: companyData.addressLine3,
+          city: companyData.city,
+          state: companyData.state,
+          pincode: Number(companyData.pincode),
+          companyType: companyData.companyType,
+          currencyId: companyData.currencyId,
+          shortname: await generateShortTenant(companyData.name),
+          tenant: await getShortName(companyData.name),
+          publicapiKey: generateApiKey(),
+          privateapiKey: generateApiKey()
+        }
+      });
+
+      const branch = await fastify.prisma.branch.create({
+        data: {
+          name: `${company.name} Main Branch`,
+          companyId: company.id,
+          addressLine1: company.addressLine1,
+          addressLine2: company.addressLine2,
+          addressLine3: company.addressLine3,
+          city: company.city,
+          state: company.state,
+          pincode: company.pincode
+        }
+      });
+
+      const defaultAccounts = [
+        { name: 'Cash', type: 'ASSET', code: '1000' },
+        { name: 'Bank', type: 'ASSET', code: '1010' },
+        { name: 'Accounts Receivable', type: 'ASSET', code: '1100' },
+        { name: 'Inventory', type: 'ASSET', code: '1200' },
+        { name: 'Tax Receivable', type: 'ASSET', code: '1300' },
+        { name: 'Accounts Payable', type: 'LIABILITY', code: '2000' },
+        { name: 'Tax Payable', type: 'LIABILITY', code: '2100' },
+        { name: 'Owner Equity', type: 'EQUITY', code: '3000' },
+        { name: 'Sales Revenue', type: 'INCOME', code: '4000' },
+        { name: 'Purchases', type: 'EXPENSE', code: '5000' },
+        { name: 'Rent Expense', type: 'EXPENSE', code: '5001' },
+        { name: 'Salaries Expense', type: 'EXPENSE', code: '5100' },
+        { name: 'Utilities Expense', type: 'EXPENSE', code: '5200' },
+      ];
+      await fastify.prisma.account.createMany({
+        data: defaultAccounts.map(a => ({ ...a, companyId: company.id }))
+      });
+
+      // generate password for branch admin
+      const branchPassword = generateRandomPassword();
+
+      const password = generateRandomPassword();
+
+      const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const adminUser = await fastify.prisma.user.create({
+        data: {
+          email: primaryEmail,
+          password: hashedPassword,
+          name: `${company.name} Admin`,
+          role: "ADMIN",
+          companyId: company.id,
+          branchId: null
+        }
+      });
+
+      const storeUser = await fastify.prisma.user.create({
+        data: {
+          email: secondaryEmail,
+          password: hashedBranchPassword,
+          name: `${company.name} Store Admin`,
+          role: "STOREADMIN",
+          companyId: company.id,
+          branchId: branch.id,
+        }
+      });
+
+      await enqueueUserRegistrationEmail({
+        to: primaryEmail,
+        name: company.name,
+        role: "ADMIN",
+        email: primaryEmail,
+        mobile_no: primaryPhoneNo,
+        password: password,
+      });
+
+      // await enqueueUserRegistrationEmail({
+      //   to: secondaryEmail,
+      //   name: branch.name,
+      //   role: "STOREADMIN",
+      //   email: secondaryEmail,
+      //   mobile_no: secondaryPhoneNo,
+      //   password: branchPassword,
+      // });
+
+      return reply.send({
+        statusCode: "00",
+        message: "Company, branch & users created successfully",
+        data: {
+          company,
+          branch,
+          adminUser,
+          storeUser
+        }
+      });
+
+    } catch (err) {
+      request.log.error(err);
+      return reply.send({
+        statusCode: "99",
+        message: "Internal server error",
+        error: err.message
+      });
+    }
+  });
 
   // Old Register
 

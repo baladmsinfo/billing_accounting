@@ -191,7 +191,7 @@ module.exports = async function (fastify) {
 
         if (!item) {
             return {
-                statusCode: "01",
+                statusCode: "09",
                 message: "Item not found"
             };
         }

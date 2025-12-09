@@ -503,6 +503,7 @@ enum TaxType {
   IGST
   SGST
   CGST
+  VAT
 }
 
 model StockLedger {

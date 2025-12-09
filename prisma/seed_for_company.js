@@ -2,7 +2,7 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-const COMPANY_ID = "d66a3d3d-9c15-422f-9f53-4c6e71cda799";
+const COMPANY_ID = "fc970983-0169-4127-9bb8-c7444fc772ef";
 
 async function main() {
     console.log("🌱 Seeding started...");

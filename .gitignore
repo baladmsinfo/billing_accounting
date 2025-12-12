@@ -5,9 +5,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Keep environment variables out of version control
+# Ignore all env files
 .env
-.env*
+.env.*
 !.env.example
 
 # Logs

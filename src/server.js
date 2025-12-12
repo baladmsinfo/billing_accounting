@@ -16,6 +16,15 @@ const fastify = require('fastify')({
   }
 })
 
+const view = require("@fastify/view");
+const ejs = require("ejs");
+const path = require("path");
+
+fastify.register(view, {
+  engine: { ejs },
+  root: path.join(__dirname, "views"),
+  viewExt: "ejs",
+});
 
 fastify.register(require("./plugins/env"));
 
@@ -98,15 +107,24 @@ fastify.after(async () => {
     let publicPaths;
     if (fastify.config.NODE_ENV === "development") {
       publicPaths = [
+        "/public/",
         "/api/store/init",
         "/api/users/login",
         "/api/users/send-otp",
         "/api/users/verify-otp",
         "/api/users/register",
-        "/api/users/currencies"
+        "/api/users/currencies",
+        "/api/payments/bill",
+        "/public/makepayment.js",
+        "/public/assets/js/",
+        "/public/output.css",
       ];
-    } else {  
+    } else {
       publicPaths = [
+        "/public/",
+        "/public/makepayment.js",
+        "/public/assets/js/",
+        "/public/output.css",
         "api/store/init",
         "/api/users/login",
         "/api/users/send-otp",
@@ -115,10 +133,11 @@ fastify.after(async () => {
         "/api/users/verify-otp",
         "/api/users/register",
         "/images",
-        "/api/users/currencies"
+        "/api/users/currencies",
+        "/api/payments/bill"
       ];
     }
-    console.log("ENV",fastify.config.ENV)
+    console.log("ENV", fastify.config.ENV)
     console.log(publicPaths, "public paths")
 
     if (publicPaths.some((path) => req.raw.url.startsWith(path))) {

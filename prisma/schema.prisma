@@ -91,6 +91,9 @@ model Company {
   primaryPhoneNo   String
   secondaryPhoneNo String?
 
+  logoUrlShort String?
+  logoUrlLong  String?
+
   addressLine1 String
   addressLine2 String?
   addressLine3 String?

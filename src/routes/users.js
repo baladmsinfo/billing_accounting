@@ -21,6 +21,7 @@ module.exports = async function (fastify, opts) {
   fastify.post("/register", async (request, reply) => {
     try {
       const {
+        password,
         company: companyData
       } = request.body;
 
@@ -98,8 +99,6 @@ module.exports = async function (fastify, opts) {
 
       // generate password for branch admin
       const branchPassword = generateRandomPassword();
-
-      const password = generateRandomPassword();
 
       const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
 

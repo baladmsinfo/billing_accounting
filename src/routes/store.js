@@ -25,40 +25,45 @@ module.exports = async function (fastify) {
     // -------------------------------------------------------
 
     fastify.get("/init/:id", async (req, reply) => {
-
         const tenant = req.params.id
 
         try {
-
             const data = await prisma.company.findUnique({
                 where: { tenant },
                 include: {
-                    currency: true
+                    currency: true,
+
+                    // ✅ ONLY DEFAULT BANNER
+                    banners: {
+                        where: {
+                            manage: true
+                        },
+                        take: 1   // extra safety (even if logic breaks someday)
+                    }
                 }
-            });
+            })
 
             if (!data) {
                 return reply.code(404).send({
                     statusCode: "99",
                     message: "Tenant not found",
-                });
+                })
             }
 
-            return {
+            return reply.send({
                 statusCode: "00",
                 message: "Tenant fetched successfully",
-                data: data,
-            };
+                data
+            })
 
         } catch (error) {
             return reply.code(500).send({
                 statusCode: "99",
                 message: "Failed to fetch tenant",
                 error: error.message,
-            });
+            })
         }
-
-    });
+    })
 
     fastify.get('/me', async (request, reply) => {
         try {
@@ -146,7 +151,36 @@ module.exports = async function (fastify) {
         }
     });
 
+    fastify.get(
+        "/banners",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.companyId;
 
+                const banners = await fastify.prisma.banner.findMany({
+                    where: { companyId },
+                    orderBy: { createdAt: "desc" },
+                    include: {
+                        image: true
+                    }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Banners fetched successfully",
+                    data: banners
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
 
     fastify.get("/product/:id", async (req) => {
         return prisma.product.findUnique({

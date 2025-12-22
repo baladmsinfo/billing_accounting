@@ -20,24 +20,24 @@ enum ProductType {
 }
 
 model User {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  password          String
-  apikey            String?   @unique
-  name              String
-  role              Role      @default(USER)
-  status            Boolean   @default(false)
-  mobile_verifited  Boolean   @default(false)
-  email_verifited   Boolean   @default(false)
-  invited           Boolean   @default(false)
-  inviteToken       String?
-  inviteTokenExpiry DateTime?
+  id                   String                @id @default(uuid())
+  email                String                @unique
+  password             String
+  apikey               String?               @unique
+  name                 String
+  role                 Role                  @default(USER)
+  status               Boolean               @default(false)
+  mobile_verifited     Boolean               @default(false)
+  email_verifited      Boolean               @default(false)
+  invited              Boolean               @default(false)
+  inviteToken          String?
+  inviteTokenExpiry    DateTime?
   invoiceItemTimelines InvoiceItemTimeline[]
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
-  branchId String?      
+  branchId String?
   branch   Branch? @relation(fields: [branchId], references: [id])
 
   createdAt DateTime @default(now())
@@ -45,14 +45,14 @@ model User {
 }
 
 model Currency {
-  id        String  @id @default(uuid())
-  code      String  @unique
-  name      String
-  symbol    String
-  country   String
+  id            String  @id @default(uuid())
+  code          String  @unique
+  name          String
+  symbol        String
+  country       String
   decimalDigits Int?
-  rounding   Int?
-  isDefault Boolean @default(true)
+  rounding      Int?
+  isDefault     Boolean @default(true)
 
   companies Company[]
 
@@ -61,31 +61,31 @@ model Currency {
 }
 
 model Company {
-  id            String         @id @default(uuid())
-  name          String
-  tenant        String?        @unique
-  shortname     String?
-  gstNumber     String?
-  privateapiKey String?        @unique
-  publicapiKey  String?        @unique
-  productType   ProductType    @default(BILLING)
-  users         User[]
-  branches      Branch[]
-  accounts      Account[]
-  journals      JournalEntry[]
-  invoices      Invoice[]
-  products      Product[]
-  items         Item[]
-  customers     Customer[]
-  taxRates      TaxRate[]
-  payments      Payment[]
-  stock         StockLedger[]
-  categories    Category[]
-  invoiceTax    InvoiceTax[]
-  vendors       Vendor[]
-  carts         Cart[]
-  banners       Banner[]
-  trial         Boolean        @default(true)
+  id               String         @id @default(uuid())
+  name             String
+  tenant           String?        @unique
+  shortname        String?
+  gstNumber        String?
+  privateapiKey    String?        @unique
+  publicapiKey     String?        @unique
+  productType      ProductType    @default(BILLING)
+  users            User[]
+  branches         Branch[]
+  accounts         Account[]
+  journals         JournalEntry[]
+  invoices         Invoice[]
+  products         Product[]
+  items            Item[]
+  customers        Customer[]
+  taxRates         TaxRate[]
+  payments         Payment[]
+  stock            StockLedger[]
+  categories       Category[]
+  invoiceTax       InvoiceTax[]
+  vendors          Vendor[]
+  carts            Cart[]
+  banners          Banner[]
+  trial            Boolean        @default(true)
   primaryEmail     String
   secondaryEmail   String?
   primaryPhoneNo   String
@@ -110,11 +110,11 @@ model Company {
 }
 
 model Banner {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   title       String?
-  description String?    // optional
-  imageUrl    String     // required URL
-  manage      Boolean   @default(true) // enable/disable banner
+  description String? // optional
+  imageUrl    String // required URL
+  manage      Boolean @default(true) // enable/disable banner
 
   // Company relation
   companyId String
@@ -129,21 +129,21 @@ model Banner {
 }
 
 model Branch {
-  id        String   @id @default(uuid())
-  name      String
+  id           String  @id @default(uuid())
+  name         String
   addressLine1 String
   addressLine2 String?
   addressLine3 String?
-  city      String?
-  state     String?
-  pincode   Int?
+  city         String?
+  state        String?
+  pincode      Int?
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
-  items     Item[]
+  items Item[]
 
-  users     User[]
+  users User[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -188,7 +188,7 @@ model JournalEntry {
 }
 
 model Category {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
 
@@ -203,8 +203,8 @@ model Category {
   subProducts Product[] @relation("SubCategory")
 
   /// One image per Category (optional)
-  imageID  String?          @unique @map("image_id")
-  image    Images?          @relation(fields: [imageID], references: [id])
+  imageID String? @unique @map("image_id")
+  image   Images? @relation(fields: [imageID], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -212,15 +212,14 @@ model Category {
   @@map("categories")
 }
 
-
 model Product {
   id          String  @id @default(uuid())
   name        String
   sku         String  @unique
   description String?
   imageUrl    String?
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
+  companyId   String
+  company     Company @relation(fields: [companyId], references: [id])
 
   categoryId String? // Parent category
   category   Category? @relation("ParentCategory", fields: [categoryId], references: [id])
@@ -232,7 +231,7 @@ model Product {
   invoiceItems InvoiceItem[]
   cartItems    CartItem[]
 
-  images  Images[]
+  images Images[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -268,35 +267,35 @@ enum PaymentMethod {
 }
 
 model Item {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   productId String
-  product   Product  @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
   sku       String?
   variant   String?
   price     Float
   MRP       Float?
-  quantity  Int        @default(0)
+  quantity  Int     @default(0)
   location  String?
   companyId String
-  company   Company   @relation(fields: [companyId], references: [id])
+  company   Company @relation(fields: [companyId], references: [id])
 
   invoiceItems InvoiceItem[]
-  stock       StockLedger[]
-  cartItems   CartItem[]
+  stock        StockLedger[]
+  cartItems    CartItem[]
 
   taxRateId String?
   taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
 
-  branches  Branch[]   // 👈 Many-to-many
+  branches Branch[] // 👈 Many-to-many
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model CustomerAddress {
-  id          String   @id @default(uuid())
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id])
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
 
   addressLine1 String
   addressLine2 String?
@@ -306,10 +305,10 @@ model CustomerAddress {
   country      String?
   pincode      String?
 
-  isDefault   Boolean  @default(false) // optional — track primary address
+  isDefault Boolean @default(false) // optional — track primary address
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Customer {
@@ -321,13 +320,13 @@ model Customer {
   companyId String
   password  String?
 
-  company   Company   @relation(fields: [companyId], references: [id])
+  company   Company           @relation(fields: [companyId], references: [id])
   invoices  Invoice[]
   carts     Cart[]
-  addresses CustomerAddress[]   // 👈 add this line
+  addresses CustomerAddress[] // 👈 add this line
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum InvoiceType {
@@ -343,10 +342,10 @@ enum InvoiceType {
 model Cart {
   id         String     @id @default(uuid())
   companyId  String
-  company    Company     @relation(fields: [companyId], references: [id])
+  company    Company    @relation(fields: [companyId], references: [id])
   customerId String?
-  customer   Customer?   @relation(fields: [customerId], references: [id])
-  status     CartStatus  @default(PENDING)
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  status     CartStatus @default(PENDING)
   items      CartItem[]
 
   createdAt DateTime @default(now())
@@ -407,9 +406,10 @@ model Invoice {
   vendor   Vendor? @relation(fields: [vendorId], references: [id])
 
   date        DateTime
-  dueDate     DateTime?
+  dueDate     DateTime?     @default(now())
   status      InvoiceStatus @default(PENDING)
   type        InvoiceType   @default(SALE)
+  expenseImages ExpenseImage[]
   items       InvoiceItem[]
   payments    Payment[]
   invoiceTax  InvoiceTax[]
@@ -483,23 +483,22 @@ model InvoiceItemTimeline {
 }
 
 model TaxRate {
-  id          String      @id @default(uuid())
-  name        String
-  rate        Float
-  type        TaxType
-  companyId   String
-  company     Company     @relation(fields: [companyId], references: [id])
+  id        String  @id @default(uuid())
+  name      String
+  rate      Float
+  type      TaxType
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  items       Item[]      
+  items Item[]
 
   invoiceTax   InvoiceTax[]
   cartItems    CartItem[]
   invoiceItems InvoiceItem[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
-
 
 enum TaxType {
   GST
@@ -530,23 +529,38 @@ enum StockTxnType {
   ADJUSTMENT
 }
 
+model ExpenseImage {
+  id        String   @id @default(uuid())
+
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+
+  imageId   String
+  image     Images   @relation(fields: [imageId], references: [id])
+
+  imageUrl  String
+
+  createdAt DateTime @default(now())
+}
+
 model Images {
-  id         String    @id @default(uuid())
-  url        String
-  key        String?
-  docid      Int?
-  filename   String?
-  mimetype   String?
-  size       Int?
+  id       String  @id @default(uuid())
+  url      String
+  key      String?
+  docid    Int?
+  filename String?
+  mimetype String?
+  size     Int?
+  expenseImages ExpenseImage[]
 
   /// Image may belong to ONE category
-  category   Category?
+  category Category?
 
-  banners    Banner[] 
+  banners Banner[]
 
   /// Still supports product images (optional)
-  productId    String?
-  product      Product? @relation(fields: [productId], references: [id])
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
 
   createdAt DateTime @default(now())
 

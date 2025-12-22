@@ -986,7 +986,31 @@ module.exports = async function (fastify) {
         console.log("Checkout request for cartId:", cartId, form);
 
         const companyId = req.companyId;
-        let customerId = req.customerId || null;
+        let customerId = null;
+
+        if (req.customerId) {
+            customerId = req.customerId;
+        } else {
+            const email = form.email?.trim() || null;
+            const phone = form.phone ? String(form.phone).trim() : null;
+
+            if (email || phone) {
+                const existingCustomer = await fastify.prisma.customer.findFirst({
+                    where: {
+                        companyId,
+                        OR: [
+                            email ? { email } : undefined,
+                            phone ? { phone } : undefined,
+                        ].filter(Boolean),
+                    },
+                    select: { id: true },
+                });
+
+                if (existingCustomer) {
+                    customerId = existingCustomer.id;
+                }
+            }
+        }
 
         return await fastify.prisma.$transaction(async (tx) => {
             // --------------------------- CART VALIDATION --------------------------- //

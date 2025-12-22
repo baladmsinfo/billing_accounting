@@ -194,9 +194,10 @@ module.exports = async function (fastify, opts) {
 
   fastify.get("/", async (req, reply) => {
     try {
-      const { page = 1, limit = 10, search } = req.query;
-      const skip = (page - 1) * limit;
-      const companyId = req.user.companyId;
+      const { page = 1, take = 10, search } = req.query
+      const limit = Number(take)
+      const skip = (page - 1) * limit
+      const companyId = req.user.companyId
 
       const where = {
         companyId,
@@ -206,43 +207,40 @@ module.exports = async function (fastify, opts) {
             { sku: { contains: search, mode: "insensitive" } },
           ],
         }),
-      };
+      }
 
       const [products, totalRecords] = await Promise.all([
         fastify.prisma.product.findMany({
           where,
-          skip: Number(skip),
-          take: Number(limit),
+          skip,
+          take: limit,
           include: {
             items: { include: { branches: true } },
             category: true,
             subCategory: true,
           },
-          orderBy: { createdAt: "desc" }
+          orderBy: { createdAt: "desc" },
         }),
-        fastify.prisma.product.count({ where })
-      ]);
-
-      const totalPages = Math.ceil(totalRecords / limit);
+        fastify.prisma.product.count({ where }),
+      ])
 
       return reply.send({
         statusCode: "00",
-        message: "Products fetched successfully",
-        page: Number(page),
-        limit: Number(limit),
-        totalRecords,
-        totalPages,
-        data: products
-      });
-
+        data: products,
+        pagination: {
+          page: Number(page),
+          take: limit,
+          total: totalRecords,
+        },
+      })
     } catch (error) {
       return reply.status(500).send({
         statusCode: "99",
         message: "Failed to fetch products",
         error: error.message,
-      });
+      })
     }
-  });
+  })
 
   //   // List products
   // fastify.get(
@@ -565,17 +563,17 @@ module.exports = async function (fastify, opts) {
           }
         }
 
-      const branchConnect = branchId ? { branches: { connect: [{ id: branchId }] } } : {}
+        const branchConnect = branchId ? { branches: { connect: [{ id: branchId }] } } : {}
 
-      const itemData = {
-        variant,
-        price,
-        quantity,
-        companyId,
-        productId,
-        ...(taxrate && tax ? { taxRateId: taxrate } : {}),
-        ...branchConnect
-      }
+        const itemData = {
+          variant,
+          price,
+          quantity,
+          companyId,
+          productId,
+          ...(taxrate && tax ? { taxRateId: taxrate } : {}),
+          ...branchConnect
+        }
 
         const newItem = await fastify.prisma.item.create({
           data: itemData

@@ -57,6 +57,73 @@ module.exports = async function (fastify, opts) {
     }
   )
 
+  fastify.get(
+    '/:id',
+    {
+      preHandler: checkRole("ADMIN"),
+      schema: {
+        tags: ['Customers'],
+        summary: 'Get customer by ID',
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' }
+          }
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const customer = await svc.getCustomerById(
+          fastify.prisma,
+          request.params.id,
+          request.user.companyId
+        )
+
+        if (!customer) {
+          return reply.code(404).send({
+            statusCode: "01",
+            message: "Customer not found"
+          })
+        }
+
+        reply.send({
+          statusCode: "00",
+          data: customer
+        })
+      } catch (error) {
+        fastify.log.error(error)
+        reply.code(500).send({
+          statusCode: "99",
+          message: "Failed to fetch customer",
+          error: error.message
+        })
+      }
+    }
+  )
+
+  fastify.get(
+    '/:id/invoices',
+    {
+      preHandler: checkRole('ADMIN'),
+    },
+    async (request, reply) => {
+      const { startDate, endDate, take } = request.query
+
+      const invoices = await svc.getCustomerInvoices(
+        fastify.prisma,
+        request.params.id,
+        request.user.companyId,
+        { startDate, endDate, take: Number(take) || 10 }
+      )
+
+      reply.send({
+        statusCode: '00',
+        data: invoices,
+      })
+    }
+  )
+
   // Update customer
   fastify.put(
     '/:id',

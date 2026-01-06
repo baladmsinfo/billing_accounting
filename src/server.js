@@ -125,7 +125,7 @@ fastify.after(async () => {
         "/public/makepayment.js",
         "/public/assets/js/",
         "/public/output.css",
-        "api/store/init",
+        "/api/store/init",
         "/api/users/login",
         "/api/users/send-otp",
         "/api/users/forgotpassword",

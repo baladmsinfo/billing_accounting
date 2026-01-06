@@ -38,6 +38,7 @@ module.exports = async function (fastify, opts) {
       const currency = await fastify.prisma.currency.findUnique({
         where: { id: companyData.currencyId }
       });
+      
       if (!currency) {
         return reply.send({ statusCode: "01", message: "Invalid currencyId" });
       }

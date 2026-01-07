@@ -3,6 +3,8 @@ const svc = require('../services/invoiceService')
 const { CartStatus } = require('@prisma/client')
 const checkRole = require('../utils/checkRole')
 
+const { getAccountId } = require('../services/invoiceService')
+
 module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
@@ -92,7 +94,6 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
-
 
   fastify.post(
     '/purchase',
@@ -518,6 +519,24 @@ module.exports = async function (fastify, opts) {
 
               const qty = updatedItem.quantity;
 
+              if (status === 'RETURNED' || status === 'CANCELLED') {
+                const allItems = await tx.invoiceItem.findMany({
+                  where: { invoiceId: invoice.id },
+                  select: { status: true }
+                })
+
+                const hasActiveItems = allItems.some(item =>
+                  ['ORDERED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(item.status)
+                )
+
+                if (!hasActiveItems) {
+                  await tx.invoice.update({
+                    where: { id: invoice.id },
+                    data: { status }
+                  })
+                }
+              }
+
               if (invoice.type === 'PURCHASE' && status === 'RETURNED') {
                 await tx.stockLedger.create({
                   data: {
@@ -535,7 +554,7 @@ module.exports = async function (fastify, opts) {
                 });
               }
 
-              if (invoice.type === 'SALE' && status === 'RETURNED') {
+              if (invoice.type !== 'PURCHASE' && status === 'RETURNED') {
                 await tx.stockLedger.create({
                   data: {
                     companyId: invoice.companyId,
@@ -552,7 +571,7 @@ module.exports = async function (fastify, opts) {
                 });
               }
 
-              if (invoice.type === 'SALE' && status === 'CANCELLED') {
+              if (invoice.type !== 'PURCHASE' && status === 'CANCELLED') {
                 await tx.stockLedger.create({
                   data: {
                     companyId: invoice.companyId,
@@ -605,6 +624,185 @@ module.exports = async function (fastify, opts) {
       }
     }
   );
+
+  fastify.post(
+    '/refund-process',
+    {
+      preHandler: checkRole('ADMIN'),
+    },
+    async (request, reply) => {
+      const { invoiceId, itemId, refundTotal, refundType, reason, refundSubtotal, refundTax, utr, method } = request.body
+      const userId = request.user.id
+
+      try {
+        const result = await fastify.prisma.$transaction(async (tx) => {
+
+          const invoice = await tx.invoice.findUnique({
+            where: { id: invoiceId },
+            include: {
+              items: {
+                where: { id: itemId },
+                include: { taxRate: true }
+              }
+            }
+          })
+
+          if (!invoice) throw new Error('Invoice not found')
+          if (!invoice.items.length) throw new Error('Invoice item not found')
+
+          const invoiceItem = invoice.items[0]
+
+          let newStatus
+
+          if (method === 'CASH') {
+            newStatus = 'REFUND_PROCESSED'
+          } else if (['SALE', 'POS', 'ONLINE'].includes(invoice.type)) {
+            newStatus = 'REFUND_PROCESSING'
+          } else if (invoice.type === 'PURCHASE') {
+            newStatus = 'REFUND_REQUESTED'
+          } else {
+            newStatus = 'REFUND_PROCESSING'
+          }
+
+          await tx.payment.create({
+            data: {
+              companyId: invoice.companyId,
+              invoiceId: invoice.id,
+
+              amount: -Math.abs(refundTotal),
+
+              method,                
+              referenceNo: utr || null,
+
+              date: new Date(),
+              note: `Refund ${refundType || ''} for item ${invoiceItem.id}`
+            }
+          })
+
+          await tx.invoiceItem.update({
+            where: { id: itemId },
+            data: {
+              status: newStatus,
+              paidAmount: {
+                decrement: refundTotal
+              },
+              reason: reason || `Refund initiated (${method})`
+            }
+          })
+
+          await tx.invoiceItemTimeline.create({
+            data: {
+              invoiceItemId: itemId,
+              oldStatus: invoiceItem.status,
+              newStatus,
+              userId,
+              note: `Refund initiated (${method})`
+            }
+          })
+
+          const baseAmount = refundSubtotal
+          const taxAmount = refundTax
+
+          const description = `${['SALE', 'POS', 'ONLINE'].includes(invoice.type) ? 'Sales Return' : invoice.type === 'PURCHASE' ? 'Purchase Return' : 'Refund'} - Invoice ${invoice.invoiceNumber}`
+
+          if (['SALE', 'POS', 'ONLINE'].includes(invoice.type)) {
+
+            await tx.journalEntry.create({
+              data: {
+                companyId: invoice.companyId,
+                accountId: await getAccountId(tx, invoice.companyId, 'Sales Return'),
+                date: new Date(),
+                description,
+                debit: baseAmount,
+                credit: 0
+              }
+            })
+
+            if (taxAmount > 0) {
+              await tx.journalEntry.create({
+                data: {
+                  companyId: invoice.companyId,
+                  accountId: await getAccountId(tx, invoice.companyId, 'Tax Payable'),
+                  date: new Date(),
+                  description,
+                  debit: taxAmount,
+                  credit: 0
+                }
+              })
+            }
+
+            await tx.journalEntry.create({
+              data: {
+                companyId: invoice.companyId,
+                accountId: await getAccountId(
+                  tx,
+                  invoice.companyId,
+                  method === 'CASH' ? 'Cash' : 'Bank'
+                ),
+                date: new Date(),
+                description,
+                debit: 0,
+                credit: refundTotal
+              }
+            })
+          }
+
+          if (invoice.type === 'PURCHASE') {
+
+            await tx.journalEntry.create({
+              data: {
+                companyId: invoice.companyId,
+                accountId: await getAccountId(tx, invoice.companyId, 'Accounts Payable'),
+                date: new Date(),
+                description,
+                debit: refundTotal,
+                credit: 0
+              }
+            })
+
+            await tx.journalEntry.create({
+              data: {
+                companyId: invoice.companyId,
+                accountId: await getAccountId(tx, invoice.companyId, 'Purchase Return'),
+                date: new Date(),
+                description,
+                debit: 0,
+                credit: baseAmount
+              }
+            })
+
+            if (taxAmount > 0) {
+              await tx.journalEntry.create({
+                data: {
+                  companyId: invoice.companyId,
+                  accountId: await getAccountId(tx, invoice.companyId, 'Tax Receivable'),
+                  date: new Date(),
+                  description,
+                  debit: 0,
+                  credit: taxAmount
+                }
+              })
+            }
+          }
+
+          return true
+        })
+
+        return reply.code(201).send({
+          statusCode: 201,
+          message: 'Refund processed successfully',
+          data: result
+        })
+
+      } catch (error) {
+        fastify.log.error(error)
+        return reply.code(500).send({
+          statusCode: 500,
+          message: error.message
+        })
+      }
+    }
+  )
 
   fastify.get('/item/:id/timeline', {
     preHandler: checkRole("ADMIN"),

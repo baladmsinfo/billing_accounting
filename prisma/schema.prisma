@@ -425,6 +425,7 @@ enum InvoiceStatus {
   PAYLATER
   PAID
   CANCELLED
+  RETURNED
 }
 
 model InvoiceTax {
@@ -451,6 +452,7 @@ model InvoiceItem {
   product    Product               @relation(fields: [productId], references: [id])
   quantity   Int
   price      Float
+  reason     String?
   status     InvoiceItemStatus     @default(ORDERED)
   taxRateId  String?
   timelines  InvoiceItemTimeline[]
@@ -466,6 +468,9 @@ enum InvoiceItemStatus {
   DELIVERED
   CANCELLED
   RETURNED
+  REFUND_PROCESSING
+  REFUND_REQUESTED
+  REFUND_PROCESSED
 }
 
 model InvoiceItemTimeline {

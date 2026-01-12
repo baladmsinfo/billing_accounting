@@ -163,24 +163,15 @@ async function ensureBranches(company, count) {
       branch = await prisma.branch.create({
         data: {
           name,
-<<<<<<< HEAD
-=======
           addressLine1: company.addressLine1,
           addressLine2: company.addressLine2,
           addressLine3: company.addressLine3,
->>>>>>> 0f2e0adb6ac6416447ea960706990c6f9fb3d10c
           city: company.city,
           state: company.state,
           pincode: company.pincode,
           companyId: company.id,
-<<<<<<< HEAD
-          addressLine1: `Registered Office - ${company.city}`,
-        },
-      });
-=======
         }
       })
->>>>>>> 0f2e0adb6ac6416447ea960706990c6f9fb3d10c
     } else {
       branch = await prisma.branch.update({
         where: { id: branch.id },
@@ -199,21 +190,6 @@ async function ensureBranches(company, count) {
 
 async function ensureAccounts(company) {
   const items = [
-<<<<<<< HEAD
-        { name: 'Cash', type: 'ASSET', code: '1000' },
-        { name: 'Bank', type: 'ASSET', code: '1010' },
-        { name: 'Accounts Receivable', type: 'ASSET', code: '1100' },
-        { name: 'Inventory', type: 'ASSET', code: '1200' },
-        { name: 'Tax Receivable', type: 'ASSET', code: '1300' },
-        { name: 'Accounts Payable', type: 'LIABILITY', code: '2000' },
-        { name: 'Tax Payable', type: 'LIABILITY', code: '2100' },
-        { name: 'Owner Equity', type: 'EQUITY', code: '3000' },
-        { name: 'Sales Revenue', type: 'INCOME', code: '4000' },
-        { name: 'Purchases', type: 'EXPENSE', code: '5000' },
-        { name: 'Rent Expense', type: 'EXPENSE', code: '5001' },
-        { name: 'Salaries Expense', type: 'EXPENSE', code: '5100' },
-        { name: 'Utilities Expense', type: 'EXPENSE', code: '5200' },
-=======
     // Assets
     { name: 'Cash', type: 'ASSET', code: '1000' },
     { name: 'Bank', type: 'ASSET', code: '1010' },
@@ -243,7 +219,6 @@ async function ensureAccounts(company) {
     { name: 'Rent Expense', type: 'EXPENSE', code: '5100' },
     { name: 'Salaries Expense', type: 'EXPENSE', code: '5200' },
     { name: 'Utilities Expense', type: 'EXPENSE', code: '5300' },
->>>>>>> 0f2e0adb6ac6416447ea960706990c6f9fb3d10c
   ];
 
   for (const a of items) {

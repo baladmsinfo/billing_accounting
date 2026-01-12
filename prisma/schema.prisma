@@ -345,7 +345,7 @@ model Customer {
   company   Company           @relation(fields: [companyId], references: [id])
   invoices  Invoice[]
   carts     Cart[]
-  addresses CustomerAddress[] // 👈 add this line
+  addresses CustomerAddress[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

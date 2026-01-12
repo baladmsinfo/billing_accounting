@@ -1,5 +1,5 @@
 // utils/licenseKey.js
-import crypto from "crypto";
+const crypto = require('crypto')
 //import jwt from "jsonwebtoken";
 
 export function generateLicenseKey(prefix = "BBX") {

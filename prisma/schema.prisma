@@ -77,11 +77,13 @@ model Company {
   products         Product[]
   items            Item[]
   customers        Customer[]
+  fulfillmentProviders FulfillmentProvider[]
   taxRates         TaxRate[]
   payments         Payment[]
   stock            StockLedger[]
   categories       Category[]
   invoiceTax       InvoiceTax[]
+  ownShippings     OwnShipping[]
   vendors          Vendor[]
   carts            Cart[]
   banners          Banner[]
@@ -126,6 +128,26 @@ model Banner {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model FulfillmentProvider {
+  id        String  @id @default(uuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  invoiceItems InvoiceItem[]
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, companyId])
 }
 
 model Branch {
@@ -405,27 +427,41 @@ model Invoice {
   vendorId String?
   vendor   Vendor? @relation(fields: [vendorId], references: [id])
 
-  date        DateTime
-  dueDate     DateTime?     @default(now())
-  status      InvoiceStatus @default(PENDING)
-  type        InvoiceType   @default(SALE)
+  date              DateTime
+  dueDate           DateTime?        @default(now())
+  status            InvoiceStatus    @default(PENDING)
+  fulfillmentStatus FulfillmentStatus @default(ORDERED)
+  type              InvoiceType      @default(SALE)
+
   expenseImages ExpenseImage[]
-  items       InvoiceItem[]
-  payments    Payment[]
-  invoiceTax  InvoiceTax[]
+  items         InvoiceItem[]
+  payments      Payment[]
+  invoiceTax    InvoiceTax[]
+
   totalAmount Float
   taxAmount   Float
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum InvoiceStatus {
   PENDING
   PARTIAL
   PAYLATER
-  PAID
-  CANCELLED
-  RETURNED
+  PAID 
+  REFUND_PROCESSING
+  REFUND_REQUESTED
+  REFUND_PROCESSED
+}
+
+enum FulfillmentStatus {
+  ORDERED       
+  PROCESSING
+  SHIPPED   
+  DELIVERED    
+  RETURNED     
+  CANCELLED    
 }
 
 model InvoiceTax {
@@ -459,6 +495,18 @@ model InvoiceItem {
   taxRate    TaxRate?              @relation(fields: [taxRateId], references: [id])
   total      Float
   paidAmount Float                 @default(0)
+  
+  shippingMode ShippingMode?
+
+  trackingNumber String?
+  vehicleNumber  String?
+  deliveryRemarks String?
+
+  fulfillmentProviderId String?
+  fulfillmentProvider FulfillmentProvider? @relation(fields: [fulfillmentProviderId], references: [id])
+
+  ownShippingId String?
+  ownShipping   OwnShipping? @relation(fields: [ownShippingId], references: [id])
 }
 
 enum InvoiceItemStatus {
@@ -471,6 +519,27 @@ enum InvoiceItemStatus {
   REFUND_PROCESSING
   REFUND_REQUESTED
   REFUND_PROCESSED
+}
+
+enum ShippingMode {
+  OWN
+  FULFILLMENT
+}
+
+model OwnShipping {
+  id String @id @default(uuid())
+
+  courierPartner String
+  courierContact String?
+
+  invoiceItems InvoiceItem[]
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([courierPartner, courierContact, companyId])
 }
 
 model InvoiceItemTimeline {

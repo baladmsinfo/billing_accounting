@@ -15,8 +15,18 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const bcrypt = require("bcrypt");
 const { generateApiKey } = require('../src/utils/keyGenerator')
-const { generateShortTenant,getShortName } = require('../src/utils/tenant')
+const { generateShortTenant, getShortName } = require('../src/utils/tenant')
 const currencyData = require('./currencyList.json')
+
+async function getAccountId(tx, companyId, name) {
+  const acc = await tx.account.findFirst({
+    where: { companyId, name }
+  })
+  if (!acc) {
+    throw new Error(`Account not found: ${name}`)
+  }
+  return acc.id
+}
 
 const CONFIG = {
   companies: [
@@ -153,13 +163,15 @@ async function ensureBranches(company, count) {
       branch = await prisma.branch.create({
         data: {
           name,
-          address: `Branch ${i} Address`,
+          addressLine1: company.addressLine1,
+          addressLine2: company.addressLine2,
+          addressLine3: company.addressLine3,
           city: company.city,
           state: company.state,
           pincode: company.pincode,
           companyId: company.id,
-        },
-      });
+        }
+      })
     } else {
       branch = await prisma.branch.update({
         where: { id: branch.id },
@@ -178,13 +190,35 @@ async function ensureBranches(company, count) {
 
 async function ensureAccounts(company) {
   const items = [
-    { name: "Cash", type: "ASSET" },
-    { name: "Bank", type: "ASSET" },
-    { name: "Accounts Receivable", type: "ASSET" },
-    { name: "Inventory", type: "ASSET" },
-    { name: "Accounts Payable", type: "LIABILITY" },
-    { name: "Sales Revenue", type: "INCOME" },
-    { name: "Purchases", type: "EXPENSE" },
+    // Assets
+    { name: 'Cash', type: 'ASSET', code: '1000' },
+    { name: 'Bank', type: 'ASSET', code: '1010' },
+    { name: 'Accounts Receivable', type: 'ASSET', code: '1100' },
+    { name: 'Inventory', type: 'ASSET', code: '1200' },
+    { name: 'Tax Receivable', type: 'ASSET', code: '1300' },
+
+    // Liabilities
+    { name: 'Accounts Payable', type: 'LIABILITY', code: '2000' },
+    { name: 'Tax Payable', type: 'LIABILITY', code: '2100' },
+
+    // Equity
+    { name: 'Owner Equity', type: 'EQUITY', code: '3000' },
+
+    // Income
+    { name: 'Sales Revenue', type: 'INCOME', code: '4000' },
+
+    // Contra Income (Sales Return)
+    { name: 'Sales Return', type: 'INCOME', code: '4010' },
+
+    // Expenses
+    { name: 'Purchases', type: 'EXPENSE', code: '5000' },
+
+    // Contra Expense (Purchase Return)
+    { name: 'Purchase Return', type: 'EXPENSE', code: '5010' },
+
+    { name: 'Rent Expense', type: 'EXPENSE', code: '5100' },
+    { name: 'Salaries Expense', type: 'EXPENSE', code: '5200' },
+    { name: 'Utilities Expense', type: 'EXPENSE', code: '5300' },
   ];
 
   for (const a of items) {
@@ -215,99 +249,143 @@ async function ensureTaxRates(company) {
   return prisma.taxRate.findMany({ where: { companyId: company.id } });
 }
 
+const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
+
 async function ensureCategories(company) {
-  const parentNames = ["Groceries", "Beverages", "Household", "Personal Care"];
-  const createdParents = [];
-  for (const pn of parentNames) {
-    let parent = await prisma.category.findFirst({ where: { name: pn, companyId: company.id } });
-    if (!parent) parent = await prisma.category.create({ data: { name: pn, description: `${pn} parent`, companyId: company.id } });
-    else parent = await prisma.category.update({ where: { id: parent.id }, data: { description: `${pn} parent` } });
-    createdParents.push(parent);
+  const parentPool = [
+    "Groceries", "Beverages", "Household", "Personal Care", "Stationery",
+    "Electronics", "Dairy", "Snacks", "Frozen Foods", "Bakery",
+    "Spices", "Condiments", "Baby Care", "Pet Supplies", "Cleaning",
+    "Health", "Beauty", "Kitchenware", "Clothing", "Footwear",
+    "Home Decor", "Gardening", "Automotive", "Books", "Toys"
+  ]
+
+  const childPool = [
+    "Premium", "Budget", "Organic", "Daily Use", "Bulk Pack",
+    "Small Pack", "Family Pack", "Imported", "Local", "Eco Friendly"
+  ]
+
+  const parents = []
+  const children = []
+
+  for (let i = 0; i < 25; i++) {
+    const parentName = parentPool[i]
+    let parent = await prisma.category.findFirst({
+      where: { name: parentName, companyId: company.id }
+    })
+
+    if (!parent) {
+      parent = await prisma.category.create({
+        data: {
+          name: parentName,
+          description: `${parentName} category`,
+          companyId: company.id
+        }
+      })
+    }
+
+    parents.push(parent)
+
+    const childCount = rand(5, 10)
+
+    for (let j = 1; j <= childCount; j++) {
+      const childName = `${parentName} ${pick(childPool)} ${j}`
+
+      let child = await prisma.category.findFirst({
+        where: { name: childName, companyId: company.id }
+      })
+
+      if (!child) {
+        child = await prisma.category.create({
+          data: {
+            name: childName,
+            description: `${childName} sub category`,
+            parentId: parent.id,
+            companyId: company.id
+          }
+        })
+      }
+
+      children.push(child)
+    }
   }
 
-  // create children up to CONFIG.categoriesCount
-  const childPool = ["Rice", "Atta", "Sugar", "Tea", "Coffee", "Chips", "Biscuits", "Milk", "Bread", "Spices", "Oil", "Sauces"];
-  const createdChildren = [];
-  const toCreate = Math.max(0, CONFIG.categoriesCount - createdParents.length);
-  for (let i = 0; i < toCreate; i++) {
-    const name = `${childPool[i % childPool.length]} ${Math.floor(i / childPool.length) + 1}`.trim();
-    const parent = createdParents[i % createdParents.length];
-    let child = await prisma.category.findFirst({ where: { name, companyId: company.id } });
-    if (!child) child = await prisma.category.create({ data: { name, description: `${name} child`, parentId: parent.id, companyId: company.id } });
-    else child = await prisma.category.update({ where: { id: child.id }, data: { description: `${name} child`, parentId: parent.id } });
-    createdChildren.push(child);
-  }
-
-  return { parents: createdParents, children: createdChildren };
+  return { parents, children }
 }
 
 async function ensureProductsAndItems(company) {
-  const categories = await prisma.category.findMany({ where: { companyId: company.id } });
-  const itemsCreated = [];
-  const baseNames = [
-    "Ponni Rice",
-    "Aashirvaad Atta",
-    "Refined Sugar",
-    "Tea Leaves",
-    "Instant Coffee",
-    "Cooking Oil",
-    "Soap Bar",
-    "Toothpaste",
-    "Biscuits",
-    "Milk Packet",
-  ];
-
-  for (let i = 1; i <= CONFIG.productsCount; i++) {
-    const base = baseNames[(i - 1) % baseNames.length];
-    const variant = `${base} ${i % 3 === 0 ? "1kg" : i % 2 === 0 ? "500g" : "250g"}`;
-    const sku = `${company.id.slice(0, 6)}-PRD-${String(i).padStart(4, "0")}`;
-
-    let product = await prisma.product.findUnique({ where: { sku } });
-    if (!product) {
-      product = await prisma.product.create({
-        data: {
-          name: variant,
-          sku,
-          description: `${variant} by ${company.name}`,
-          companyId: company.id,
-          categoryId: pick(categories).id,
-        },
-      });
-    } else {
-      product = await prisma.product.update({
-        where: { id: product.id },
-        data: { name: variant, description: `${variant} by ${company.name}`, categoryId: pick(categories).id },
-      });
+  const subCategories = await prisma.category.findMany({
+    where: {
+      companyId: company.id,
+      parentId: { not: null }
     }
+  })
 
-    const itemSku = `${sku}-ITEM`;
-    const price = Number((50 + (i * 7)) % 1000) + 30;
-    const mrp = Number((price * 1.12).toFixed(2));
-    const qty = 50 + (i % 120);
+  const productBaseNames = [
+    "Rice", "Atta", "Sugar", "Tea", "Coffee",
+    "Oil", "Soap", "Toothpaste", "Biscuits", "Milk",
+    "Shampoo", "Spices", "Snacks", "Juice", "Detergent"
+  ]
 
-    let item = await prisma.item.findFirst({ where: { sku: itemSku, companyId: company.id } });
-    if (!item) {
-      item = await prisma.item.create({
-        data: {
-          sku: itemSku,
-          price,
-          MRP: mrp,
-          quantity: qty,
-          productId: product.id,
-          companyId: company.id,
-        },
-      });
-    } else {
-      item = await prisma.item.update({
-        where: { id: item.id },
-        data: { price, MRP: mrp, quantity: qty, productId: product.id },
-      });
+  const sizeVariants = ["100g", "250g", "500g", "1kg", "2kg", "5kg"]
+
+  const itemsCreated = []
+
+  for (const sub of subCategories) {
+    const productCount = Math.max(5, rand(5, 8))
+
+    for (let p = 1; p <= productCount; p++) {
+      const base = pick(productBaseNames)
+      const productName = `${sub.name} ${base}`
+      const sku = `${company.id.slice(0, 4)}-${sub.id.slice(0, 4)}-P${p}`
+
+      let product = await prisma.product.findUnique({ where: { sku } })
+
+      if (!product) {
+        product = await prisma.product.create({
+          data: {
+            name: productName,
+            sku,
+            description: `${productName} by ${company.name}`,
+            companyId: company.id,
+            categoryId: sub.parentId,
+            subCategoryId: sub.id
+          }
+        })
+      }
+
+      const itemCount = rand(2, 10)
+
+      for (let i = 1; i <= itemCount; i++) {
+        const size = pick(sizeVariants)
+        const itemSku = `${sku}-I${i}`
+        const price = rand(40, 1200)
+        const mrp = Number((price * 1.15).toFixed(2))
+
+        let item = await prisma.item.findFirst({
+          where: { sku: itemSku, companyId: company.id }
+        })
+
+        if (!item) {
+          item = await prisma.item.create({
+            data: {
+              sku: itemSku,
+              variant: size,
+              price,
+              MRP: mrp,
+              quantity: 0,
+              productId: product.id,
+              companyId: company.id
+            }
+          })
+        }
+
+        itemsCreated.push(item)
+      }
     }
-
-    itemsCreated.push(item);
   }
 
-  return itemsCreated;
+  return itemsCreated
 }
 
 async function ensureCustomersAndVendors(company) {
@@ -340,7 +418,7 @@ async function ensureCustomersAndVendors(company) {
 }
 
 async function ensureUsers(company) {
-  const passwordHash = await bcrypt.hash("admin123", 10);
+  const passwordHash = await bcrypt.hash("bucksbox", 8);
 
   const adminEmail = `admin@${company.name.replace(/\s+/g, "").toLowerCase()}.local`;
   let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -350,7 +428,7 @@ async function ensureUsers(company) {
         email: adminEmail,
         password: passwordHash,
         name: `${company.name} Admin`,
-        role: "SUPERADMIN",
+        role: "ADMIN",
         status: true,
         companyId: company.id,
       },
@@ -380,100 +458,355 @@ async function ensureUsers(company) {
 }
 
 async function createInvoices(company, items, customers, vendors, taxRates) {
-  // find some accounts if needed (not strictly required for invoice creation in schema)
   for (let i = 1; i <= CONFIG.invoicesCount; i++) {
-    const isSale = i % 2 === 0;
-    const invoiceNumber = `INV-${company.id.slice(0, 6)}-${i}`;
-    let invoice = await prisma.invoice.findFirst({ where: { invoiceNumber, companyId: company.id } });
-    if (invoice) {
-      // skip duplicates
-      continue;
-    }
+    const isSale = i % 2 === 0
+    const invoiceNumber = `INV-${company.id.slice(0, 6)}-${i}`
 
-    const invoiceData = {
-      invoiceNumber,
-      companyId: company.id,
-      type: isSale ? "SALE" : "PURCHASE",
-      date: new Date(),
-      status: "PENDING",
-      totalAmount: 0,
-      taxAmount: 0,
-    };
+    const exists = await prisma.invoice.findFirst({
+      where: { invoiceNumber, companyId: company.id }
+    })
+    if (exists) continue
 
-    if (isSale) {
-      invoiceData.customerId = pick(customers).id;
-    } else {
-      invoiceData.vendorId = pick(vendors).id;
-    }
+    await prisma.$transaction(async (tx) => {
+      let totalAmount = 0
+      let totalTax = 0
 
-    invoice = await prisma.invoice.create({ data: invoiceData });
-
-    // pick N lines
-    const lines = [];
-    for (let ln = 0; ln < CONFIG.invoiceLineQuantity; ln++) {
-      const item = pick(items);
-      const qty = intBetween(1, 5);
-      const lineTotal = Number((item.price * qty).toFixed(2));
-      const taxRate = pick(taxRates);
-      const invItem = await prisma.invoiceItem.create({
+      const invoice = await tx.invoice.create({
         data: {
-          invoiceId: invoice.id,
-          itemId: item.id,
-          productId: item.productId,
-          quantity: qty,
-          price: item.price,
-          total: lineTotal,
-          taxRateId: taxRate ? taxRate.id : null,
-          status: "ORDERED",
-        },
-      });
-
-      // Stock ledger entry
-      await prisma.stockLedger.create({
-        data: {
+          invoiceNumber,
           companyId: company.id,
-          itemId: item.id,
+          type: isSale ? 'SALE' : 'PURCHASE',
+          status: 'PENDING',
           date: new Date(),
-          type: isSale ? "SALE" : "PURCHASE",
-          quantity: qty,
-          note: `${isSale ? "Sale" : "Purchase"} for invoice ${invoice.invoiceNumber}`,
-        },
-      });
+          customerId: isSale ? pick(customers).id : null,
+          vendorId: !isSale ? pick(vendors).id : null,
+          totalAmount: 0,
+          taxAmount: 0
+        }
+      })
 
-      lines.push({ invItem, lineTotal, taxRate });
-    }
+      // ---- Invoice Items ----
+      for (let ln = 0; ln < CONFIG.invoiceLineQuantity; ln++) {
+        const item = pick(items)
+        const qty = intBetween(1, 5)
+        const lineTotal = Number((item.price * qty).toFixed(2))
+        const taxRate = pick(taxRates)
 
-    // compute totals and invoiceTax records
-    let totalAmount = 0;
-    let totalTax = 0;
-    for (const l of lines) {
-      totalAmount += l.lineTotal;
-      if (l.taxRate) {
-        // simple tax calculation: tax rate percentage on line total
-        const taxAmount = Number(((l.lineTotal * l.taxRate.rate) / 100).toFixed(2));
-        totalTax += taxAmount;
+        totalAmount += lineTotal
 
-        // create invoiceTax entry if not exists for invoice+taxRate
-        await prisma.invoiceTax.create({
+        let taxAmt = 0
+        if (taxRate) {
+          taxAmt = Number(((lineTotal * taxRate.rate) / 100).toFixed(2))
+          totalTax += taxAmt
+
+          await tx.invoiceTax.create({
+            data: {
+              invoiceId: invoice.id,
+              taxRateId: taxRate.id,
+              companyId: company.id,
+              invoiceType: isSale ? 'SALE' : 'PURCHASE',
+              amount: taxAmt
+            }
+          })
+        }
+
+        await tx.invoiceItem.create({
           data: {
             invoiceId: invoice.id,
-            taxRateId: l.taxRate.id,
+            itemId: item.id,
+            productId: item.productId,
+            quantity: qty,
+            price: item.price,
+            total: lineTotal,
+            taxRateId: taxRate?.id ?? null,
+            status: 'ORDERED'
+          }
+        })
+
+        // ---- Stock Ledger ----
+        await tx.stockLedger.create({
+          data: {
             companyId: company.id,
-            amount: taxAmount,
-            invoiceType: isSale ? "SALE" : "PURCHASE",
-          },
-        });
+            itemId: item.id,
+            type: isSale ? 'SALE' : 'PURCHASE',
+            quantity: qty,
+            note: `${isSale ? 'Sale' : 'Purchase'} for ${invoice.invoiceNumber}`
+          }
+        })
       }
-    }
 
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: { totalAmount: Number(totalAmount.toFixed(2)), taxAmount: Number(totalTax.toFixed(2)) },
-    });
+      // ---- Update totals ----
+      await tx.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          totalAmount: Number(totalAmount.toFixed(2)),
+          taxAmount: Number(totalTax.toFixed(2))
+        }
+      })
 
-    // Optionally create a payment record for partial / full payments (skipped by default)
+      const description = `${isSale ? 'Invoice' : 'Purchase Invoice'} ${invoice.invoiceNumber}`
+
+      // ======================================================
+      // 🧾 JOURNAL ENTRIES (SAME AS SERVICE LAYER)
+      // ======================================================
+
+      if (isSale) {
+        // Accounts Receivable (Debit)
+        await tx.journalEntry.create({
+          data: {
+            companyId: company.id,
+            accountId: await getAccountId(tx, company.id, 'Accounts Receivable'),
+            date: invoice.date,
+            description,
+            debit: Number((totalAmount + totalTax).toFixed(2)),
+            credit: 0
+          }
+        })
+
+        // Sales Revenue (Credit)
+        await tx.journalEntry.create({
+          data: {
+            companyId: company.id,
+            accountId: await getAccountId(tx, company.id, 'Sales Revenue'),
+            date: invoice.date,
+            description,
+            debit: 0,
+            credit: Number(totalAmount.toFixed(2))
+          }
+        })
+
+        // Tax Payable (Credit)
+        if (totalTax > 0) {
+          await tx.journalEntry.create({
+            data: {
+              companyId: company.id,
+              accountId: await getAccountId(tx, company.id, 'Tax Payable'),
+              date: invoice.date,
+              description,
+              debit: 0,
+              credit: Number(totalTax.toFixed(2))
+            }
+          })
+        }
+      } else {
+        // Purchases (Debit)
+        await tx.journalEntry.create({
+          data: {
+            companyId: company.id,
+            accountId: await getAccountId(tx, company.id, 'Purchases'),
+            date: invoice.date,
+            description,
+            debit: Number(totalAmount.toFixed(2)),
+            credit: 0
+          }
+        })
+
+        // Tax Receivable (Debit)
+        if (totalTax > 0) {
+          await tx.journalEntry.create({
+            data: {
+              companyId: company.id,
+              accountId: await getAccountId(tx, company.id, 'Tax Receivable'),
+              date: invoice.date,
+              description,
+              debit: Number(totalTax.toFixed(2)),
+              credit: 0
+            }
+          })
+        }
+
+        // Accounts Payable (Credit)
+        await tx.journalEntry.create({
+          data: {
+            companyId: company.id,
+            accountId: await getAccountId(tx, company.id, 'Accounts Payable'),
+            date: invoice.date,
+            description,
+            debit: 0,
+            credit: Number((totalAmount + totalTax).toFixed(2))
+          }
+        })
+      }
+    })
   }
 }
+
+async function seedExpenses(company) {
+  const expenseCategories = [
+    'Rent',
+    'Electricity',
+    'Office Supplies',
+    'Internet',
+    'Fuel'
+  ]
+
+  const taxRates = await prisma.taxRate.findMany({
+    where: { companyId: company.id }
+  })
+
+  for (let i = 1; i <= 8; i++) {
+    const category = expenseCategories[i % expenseCategories.length]
+    const amount = Math.floor(Math.random() * 12000) + 800
+    const useTax = Math.random() > 0.4
+
+    await seedCreateExpense({
+      prisma,
+      companyId: company.id,
+      category,
+      date: new Date(),
+      amount,
+      note: `Seeded ${category} expense #${i}`,
+      taxRateId: useTax ? taxRates[i % taxRates.length]?.id : null
+    })
+  }
+}
+
+async function seedCreateExpense({
+  prisma,
+  companyId,
+  category,
+  date,
+  amount,
+  note,
+  taxRateId = null,
+  imageId = null,
+  imageUrl = null
+}) {
+  const expenseAccountMap = {
+    Rent: 'Rent Expense',
+    Electricity: 'Utilities Expense',
+    Internet: 'Utilities Expense',
+    Fuel: 'Utilities Expense',
+    'Office Supplies': 'Purchases'
+  }
+
+  const expenseAccountName = expenseAccountMap[category]
+
+  if (!expenseAccountName) {
+    throw new Error(`No expense account mapped for category: ${category}`)
+  }
+
+  const expenseAccount = await prisma.account.findFirst({
+    where: {
+      companyId,
+      type: 'EXPENSE',
+      name: expenseAccountName
+    }
+  })
+
+  const cashAccount = await prisma.account.findFirst({
+    where: {
+      companyId,
+      type: 'ASSET',
+      name: 'Cash'
+    }
+  })
+
+  if (!expenseAccount || !cashAccount) {
+    throw new Error(
+      `Required accounts not found (Expense: ${expenseAccountName}, Cash)`
+    )
+  }
+
+  // ---------------- NO TAX ----------------
+  if (!taxRateId) {
+    await prisma.$transaction(async (tx) => {
+      await tx.journalEntry.create({
+        data: {
+          companyId,
+          date,
+          description: note ?? `${category} Expense`,
+          debit: amount,
+          credit: 0,
+          accountId: expenseAccount.id
+        }
+      })
+
+      await tx.journalEntry.create({
+        data: {
+          companyId,
+          date,
+          description: note ?? `${category} Expense Payment`,
+          debit: 0,
+          credit: amount,
+          accountId: cashAccount.id
+        }
+      })
+    })
+    return null
+  }
+
+  // ---------------- WITH TAX ----------------
+  return prisma.$transaction(async (tx) => {
+    const tax = await tx.taxRate.findUnique({ where: { id: taxRateId } })
+    if (!tax) throw new Error('Tax rate not found')
+
+    const taxAmount = Number(((amount * tax.rate) / 100).toFixed(2))
+    const total = Number((amount + taxAmount).toFixed(2))
+
+    const invoice = await tx.invoice.create({
+      data: {
+        companyId,
+        date,
+        dueDate: date,
+        type: 'EXPENSE',
+        status: 'PAID',
+        totalAmount: total,
+        taxAmount,
+        invoiceNumber: `EXP-${Date.now()}`
+      }
+    })
+
+    await tx.invoiceTax.create({
+      data: {
+        invoiceId: invoice.id,
+        companyId,
+        taxRateId,
+        invoiceType: 'EXPENSE',
+        amount: taxAmount
+      }
+    })
+
+    const taxPayableAccountId = await getAccountId(tx, companyId, 'Tax Payable')
+    const description = note ?? `Expense Invoice ${invoice.invoiceNumber}`
+
+    await tx.journalEntry.create({
+      data: {
+        companyId,
+        date,
+        description,
+        debit: amount,
+        credit: 0,
+        accountId: expenseAccount.id
+      }
+    })
+
+    await tx.journalEntry.create({
+      data: {
+        companyId,
+        date,
+        description,
+        debit: taxAmount,
+        credit: 0,
+        accountId: taxPayableAccountId
+      }
+    })
+
+    await tx.journalEntry.create({
+      data: {
+        companyId,
+        date,
+        description,
+        debit: 0,
+        credit: total,
+        accountId: cashAccount.id
+      }
+    })
+
+    return invoice
+  })
+}
+
 
 async function main() {
   console.log("🌱 Starting full idempotent seed...");
@@ -491,6 +824,7 @@ async function main() {
     const { customers, vendors } = await ensureCustomersAndVendors(company);
     await ensureUsers(company);
     await createInvoices(company, items, customers, vendors, taxRates);
+    await seedExpenses(company)
 
     console.log(`--- Done company: ${c.name} ---`);
   }

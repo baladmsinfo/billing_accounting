@@ -255,6 +255,48 @@ module.exports = async function (fastify, opts) {
       }
     }
   )
+
+  fastify.get(
+    '/fulfillment-providers',
+    {
+      preHandler: checkRole('ADMIN'),
+    },
+    async (req, reply) => {
+      try {
+        const companyId = req.user.companyId
+
+        const providers = await fastify.prisma.fulfillmentProvider.findMany({
+          where: {
+            companyId,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            email: true,
+            address: true,
+          },
+          orderBy: {
+            name: 'asc',
+          },
+        })
+
+        return reply.send({
+          statusCode: 200,
+          data: providers,
+        })
+      } catch (err) {
+        req.log.error(err, 'Failed to fetch fulfillment providers')
+
+        return reply.status(500).send({
+          statusCode: 500,
+          message: 'Unable to fetch fulfillment providers',
+        })
+      }
+    }
+  )
+
   fastify.get('/options', {
     preHandler: checkRole("ADMIN"),
   }, async (req, reply) => {
@@ -330,6 +372,54 @@ module.exports = async function (fastify, opts) {
       })
     }
   })
+
+  fastify.post(
+    '/fulfillment-providers',
+    {
+      preHandler: checkRole('ADMIN'),
+    },
+    async (req, reply) => {
+      try {
+        const companyId = req.user.companyId
+        const { name, phone, email, address } = req.body
+
+        if (!name) {
+          return reply.code(400).send({
+            statusCode: 400,
+            message: 'Provider name is required',
+          })
+        }
+
+        const provider = await fastify.prisma.fulfillmentProvider.create({
+          data: {
+            name,
+            phone,
+            email,
+            address,
+            companyId,
+          },
+        })
+
+        return reply.send({
+          statusCode: 200,
+          data: provider,
+        })
+      } catch (err) {
+        if (err.code === 'P2002') {
+          return reply.code(409).send({
+            statusCode: 409,
+            message: 'Provider already exists',
+          })
+        }
+
+        req.log.error(err)
+        return reply.code(500).send({
+          statusCode: 500,
+          message: 'Failed to create fulfillment provider',
+        })
+      }
+    }
+  )
 
   fastify.get('/products-with-items', {
     preHandler: checkRole("ADMIN"),
@@ -435,43 +525,6 @@ module.exports = async function (fastify, opts) {
     '/process/:id',
     {
       preHandler: checkRole("ADMIN"),
-      schema: {
-        tags: ['Invoice'],
-        summary: 'Update invoice item statuses and record timeline',
-        params: {
-          type: 'object',
-          required: ['id'],
-          properties: {
-            id: { type: 'string', format: 'uuid' }
-          }
-        },
-        body: {
-          type: 'object',
-          properties: {
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                required: ['itemId', 'status'],
-                properties: {
-                  itemId: { type: 'string', format: 'uuid' },
-                  status: {
-                    type: 'string',
-                    enum: [
-                      'ORDERED',
-                      'PROCESSING',
-                      'SHIPPED',
-                      'DELIVERED',
-                      'CANCELLED',
-                      'RETURNED'
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
     },
     async (request, reply) => {
       const { id } = request.params;
@@ -493,14 +546,89 @@ module.exports = async function (fastify, opts) {
 
         const updatedItems = await fastify.prisma.$transaction(async (tx) => {
           return Promise.all(
-            items.map(async ({ itemId, status }) => {
+            items.map(async ({ itemId, status, shipmentDetails }) => {
               const existing = await tx.invoiceItem.findUnique({ where: { id: itemId } });
               if (!existing) throw new Error(`Item not found: ${itemId}`);
 
               const updatedItem = await tx.invoiceItem.update({
                 where: { id: itemId },
-                data: { status }
+                data: { status },
+                include: {
+                  taxRate: true
+                }
               });
+
+              if (status === 'SHIPPED' && shipmentDetails) {
+                const {
+                  mode,
+                  trackingNumber,
+                  vehicleNumber,
+                  remarks,
+                  fulfillmentId,
+                  courierPartner,
+                  courierContact,
+                } = shipmentDetails
+
+                // COMMON FIELDS
+                const baseUpdate = {
+                  shippingMode: mode,
+                  trackingNumber,
+                  vehicleNumber,
+                  deliveryRemarks: remarks,
+                }
+
+                if (mode === 'FULFILLMENT') {
+                  if (!fulfillmentId) {
+                    throw new Error('Fulfillment provider is required')
+                  }
+
+                  await tx.invoiceItem.update({
+                    where: { id: itemId },
+                    data: {
+                      ...baseUpdate,
+                      fulfillmentProvider: {
+                        connect: { id: fulfillmentId },
+                      },
+                      ownShipping: { disconnect: true },
+                    },
+                  })
+                }
+
+                if (mode === 'OWN') {
+                  if (!courierPartner) {
+                    throw new Error('Courier partner is required')
+                  }
+
+                  // 3️⃣ Find or create OwnShipping
+                  const ownShipping = await tx.ownShipping.upsert({
+                    where: {
+                      courierPartner_courierContact_companyId: {
+                        courierPartner,
+                        courierContact: courierContact || null,
+                        companyId: existing.companyId,
+                      },
+                    },
+                    update: {},
+                    create: {
+                      courierPartner,
+                      courierContact,
+                      companyId: existing.companyId,
+                    },
+                  })
+
+                  // 4️⃣ Connect OwnShipping
+                  await tx.invoiceItem.update({
+                    where: { id: itemId },
+                    data: {
+                      ...baseUpdate,
+                      ownShipping: {
+                        connect: { id: ownShipping.id },
+                      },
+                      fulfillmentProvider: { disconnect: true },
+                    },
+                  })
+                }
+              }
 
               await tx.invoiceItemTimeline.create({
                 data: {
@@ -519,23 +647,154 @@ module.exports = async function (fastify, opts) {
 
               const qty = updatedItem.quantity;
 
-              if (status === 'RETURNED' || status === 'CANCELLED') {
+              // Updating journal entry if the invoice is not paid and retrn or cancelling
+
+              if ((status === 'RETURNED' || status === 'CANCELLED') && (invoice.status === "PENDING" || invoice.status === "PAYLATER")) {
+                const invoiceItem = updatedItem
+
+                const baseAmount = invoiceItem.price * invoiceItem.quantity
+
+                const taxRate = invoiceItem.taxRate?.rate || 0
+                const taxAmount = Number(((baseAmount * taxRate) / 100).toFixed(2))
+
+                const refundTotal = baseAmount + taxAmount
+
+
+                const description = `${['SALE', 'POS', 'ONLINE'].includes(invoice.type) ? 'Sales Return' : invoice.type === 'PURCHASE' ? 'Purchase Return' : 'Refund'} - Invoice ${invoice.invoiceNumber}`
+
+                if (['SALE', 'POS', 'ONLINE'].includes(invoice.type)) {
+
+                  await tx.journalEntry.create({
+                    data: {
+                      companyId: invoice.companyId,
+                      accountId: await getAccountId(tx, invoice.companyId, 'Sales Return'),
+                      date: new Date(),
+                      description,
+                      debit: baseAmount,
+                      credit: 0
+                    }
+                  })
+
+                  if (taxAmount > 0) {
+                    await tx.journalEntry.create({
+                      data: {
+                        companyId: invoice.companyId,
+                        accountId: await getAccountId(tx, invoice.companyId, 'Tax Payable'),
+                        date: new Date(),
+                        description,
+                        debit: taxAmount,
+                        credit: 0
+                      }
+                    })
+                  }
+
+                  await tx.journalEntry.create({
+                    data: {
+                      companyId: invoice.companyId,
+                      accountId: await getAccountId(
+                        tx,
+                        invoice.companyId,
+                        method === 'CASH' ? 'Cash' : 'Bank'
+                      ),
+                      date: new Date(),
+                      description,
+                      debit: 0,
+                      credit: refundTotal
+                    }
+                  })
+                }
+
+                if (invoice.type === 'PURCHASE') {
+
+                  await tx.journalEntry.create({
+                    data: {
+                      companyId: invoice.companyId,
+                      accountId: await getAccountId(tx, invoice.companyId, 'Accounts Payable'),
+                      date: new Date(),
+                      description,
+                      debit: refundTotal,
+                      credit: 0
+                    }
+                  })
+
+                  await tx.journalEntry.create({
+                    data: {
+                      companyId: invoice.companyId,
+                      accountId: await getAccountId(tx, invoice.companyId, 'Purchase Return'),
+                      date: new Date(),
+                      description,
+                      debit: 0,
+                      credit: baseAmount
+                    }
+                  })
+
+                  if (taxAmount > 0) {
+                    await tx.journalEntry.create({
+                      data: {
+                        companyId: invoice.companyId,
+                        accountId: await getAccountId(tx, invoice.companyId, 'Tax Receivable'),
+                        date: new Date(),
+                        description,
+                        debit: 0,
+                        credit: taxAmount
+                      }
+                    })
+                  }
+                }
+              }
+
+              // Update invoice fulfillment status if all items are returned or cancelled
+
+              if (status) {
                 const allItems = await tx.invoiceItem.findMany({
                   where: { invoiceId: invoice.id },
                   select: { status: true }
                 })
 
-                const hasActiveItems = allItems.some(item =>
-                  ['ORDERED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(item.status)
-                )
+                let hasActiveItems;
 
-                if (!hasActiveItems) {
+                if (status === 'PROCESSING') {
                   await tx.invoice.update({
                     where: { id: invoice.id },
-                    data: { status }
+                    data: { fulfillmentStatus: status }
                   })
+                } else if (status === 'SHIPPED') {
+                  hasActiveItems = allItems.some(item =>
+                    ['PROCESSING'].includes(item.status)
+                  )
+
+                  if (!hasActiveItems) {
+                    await tx.invoice.update({
+                      where: { id: invoice.id },
+                      data: { fulfillmentStatus: status }
+                    })
+                  }
+                } else if (status === 'DELIVERED') {
+                  hasActiveItems = allItems.some(item =>
+                    ['SHIPPED'].includes(item.status)
+                  )
+
+                  if (!hasActiveItems) {
+                    await tx.invoice.update({
+                      where: { id: invoice.id },
+                      data: { fulfillmentStatus: status }
+                    })
+                  }
+                } else if (status === "RETURNED" || "CANCELLED") {
+                  hasActiveItems = allItems.some(item =>
+                    ['ORDERED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(item.status)
+                  )
+
+                  if (!hasActiveItems) {
+                    await tx.invoice.update({
+                      where: { id: invoice.id },
+                      data: { fulfillmentStatus: status }
+                    })
+                  }
                 }
               }
+
+              // Update stock ledger and item quantity based on status changes
 
               if (invoice.type === 'PURCHASE' && status === 'RETURNED') {
                 await tx.stockLedger.create({
@@ -605,7 +864,21 @@ module.exports = async function (fastify, opts) {
                 });
               }
 
-              return updatedItem;
+              const finalItem = await tx.invoiceItem.findUnique({
+                where: { id: itemId },
+                include: {
+                  taxRate: true,
+                  fulfillmentProvider: true,
+                  ownShipping: true,
+                  timelines: {
+                    orderBy: { changedAt: 'desc' },
+                  },
+                  item: true,
+                  product: true,
+                },
+              });
+
+              return finalItem;
             })
           );
         });
@@ -657,11 +930,29 @@ module.exports = async function (fastify, opts) {
           if (method === 'CASH') {
             newStatus = 'REFUND_PROCESSED'
           } else if (['SALE', 'POS', 'ONLINE'].includes(invoice.type)) {
-            newStatus = 'REFUND_PROCESSING'
+            newStatus = 'REFUND_PROCESSED'
           } else if (invoice.type === 'PURCHASE') {
             newStatus = 'REFUND_REQUESTED'
           } else {
             newStatus = 'REFUND_PROCESSING'
+          }
+
+          if (newStatus) {
+            const allItems = await tx.invoiceItem.findMany({
+              where: { invoiceId: invoice.id },
+              select: { status: true }
+            })
+
+            const hasActiveItems = allItems.some(item =>
+              ['ORDERED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(item.status)
+            )
+
+            if (!hasActiveItems) {
+              await tx.invoice.update({
+                where: { id: invoice.id },
+                data: { status: newStatus }
+              })
+            }
           }
 
           await tx.payment.create({
@@ -671,11 +962,11 @@ module.exports = async function (fastify, opts) {
 
               amount: -Math.abs(refundTotal),
 
-              method,                
+              method,
               referenceNo: utr || null,
 
               date: new Date(),
-              note: `Refund ${refundType || ''} for item ${invoiceItem.id}`
+              note: `Refund ${refundType || ''}`
             }
           })
 
@@ -683,9 +974,10 @@ module.exports = async function (fastify, opts) {
             where: { id: itemId },
             data: {
               status: newStatus,
-              paidAmount: {
-                decrement: refundTotal
-              },
+              paidAmount: Math.max(
+                0,
+                (invoiceItem.paidAmount || 0) - refundTotal
+              ),
               reason: reason || `Refund initiated (${method})`
             }
           })

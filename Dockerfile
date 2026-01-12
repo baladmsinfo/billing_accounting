@@ -8,6 +8,7 @@ RUN npm install
 # Prisma client setup
 COPY prisma ./prisma
 ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+RUN npx prisma migrate resolve --applied 20260108064400_added
 RUN npx prisma generate
 
 # Copy app source

@@ -99,7 +99,7 @@ module.exports = async function (fastify, opts) {
         { preHandler: checkRole("ADMIN") },
         async (req, reply) => {
             try {
-                const companyId = req.user.companyId;
+                const companyId = req.companyId;
 
                 const branches = await fastify.prisma.branch.findMany({
                     where: { companyId },
@@ -126,7 +126,7 @@ module.exports = async function (fastify, opts) {
         { preHandler: checkRole("ADMIN") },
         async (req, reply) => {
             try {
-                const companyId = req.user.companyId;
+                const companyId = req.companyId;
                 const { page = 1, limit = 10, search = "" } = req.query;
 
                 const skip = (page - 1) * limit;
@@ -184,7 +184,7 @@ module.exports = async function (fastify, opts) {
         { preHandler: checkRole("ADMIN") },
         async (req, reply) => {
             try {
-                const companyId = req.user.companyId;
+                const companyId = req.companyId;
 
                 const banners = await fastify.prisma.banner.findMany({
                     where: { companyId },
@@ -210,6 +210,53 @@ module.exports = async function (fastify, opts) {
         }
     );
 
+    fastify.put(
+        "/banners/:id",
+        { preHandler: checkRole("ADMIN") },
+        async (request, reply) => {
+            try {
+                const companyId = request.user.companyId;
+                const { id } = request.params;
+                const { manage } = request.body;
+
+                // 🔥 If setting this banner as default
+                if (manage === true) {
+                    await fastify.prisma.$transaction([
+                        // 1️⃣ Reset all banners under company
+                        fastify.prisma.banner.updateMany({
+                            where: { companyId },
+                            data: { manage: false }
+                        }),
+
+                        // 2️⃣ Set selected banner as default
+                        fastify.prisma.banner.update({
+                            where: { id },
+                            data: { manage: true }
+                        })
+                    ]);
+                } else {
+                    // Normal update (disable only this banner)
+                    await fastify.prisma.banner.update({
+                        where: { id },
+                        data: { manage: false }
+                    });
+                }
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Banner updated successfully"
+                });
+
+            } catch (err) {
+                request.log.error(err);
+                return reply.code(500).send({
+                    statusCode: "99",
+                    message: "Failed to update banner",
+                    error: err.message
+                });
+            }
+        }
+    );
 
     // BANNERS: CREATE
     fastify.post(
@@ -219,6 +266,11 @@ module.exports = async function (fastify, opts) {
             try {
                 const companyId = request.user.companyId;
                 const { title, description, imageUrl, imageId, manage = true } = request.body;
+
+                await fastify.prisma.banner.updateMany({
+                    where: { companyId },
+                    data: { manage: false }
+                })
 
                 // Create banner under Company
                 const banner = await fastify.prisma.banner.create({

@@ -30,7 +30,16 @@ module.exports = async function (fastify, opts) {
         { preHandler: checkRole("ADMIN") },
         async (request, reply) => {
             try {
-                const { category, date, amount, note, taxRateId } = request.body
+                const {
+                    category,
+                    date,
+                    amount,
+                    note,
+                    taxRateId,
+                    imageId,
+                    imageUrl
+                } = request.body
+
                 const companyId = request.user.companyId
 
                 const expenseAccount = await fastify.prisma.account.findFirst({
@@ -93,6 +102,16 @@ module.exports = async function (fastify, opts) {
                             invoiceNumber: `EXP-${Date.now()}`,
                         },
                     })
+
+                    if (imageId && imageUrl) {
+                        await tx.expenseImage.create({
+                            data: {
+                                invoiceId: inv.id,
+                                imageId,
+                                imageUrl,
+                            }
+                        })
+                    }
 
                     // 2️⃣ Create invoice tax
                     await tx.invoiceTax.create({
@@ -225,15 +244,15 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole('ADMIN'),
             schema: {
                 tags: ['Expense'],
-                summary: 'Get all expenses (from journal entries)',
+                summary: 'Get expenses (invoice-based, category-aware)',
                 querystring: {
                     type: 'object',
                     properties: {
-                        page: { type: 'number', example: 1 },
-                        take: { type: 'number', example: 10 },
+                        page: { type: 'number', default: 1 },
+                        take: { type: 'number', default: 10 },
                         category: { type: 'string', nullable: true },
                         fromDate: { type: 'string', format: 'date', nullable: true },
                         toDate: { type: 'string', format: 'date', nullable: true }
@@ -241,43 +260,84 @@ module.exports = async function (fastify, opts) {
                 }
             }
         },
-
         async (request, reply) => {
             try {
                 const { page = 1, take = 10, category, fromDate, toDate } = request.query
                 const skip = (page - 1) * take
-
                 const companyId = request.user.companyId
 
-                const where = {
+                // 1️⃣ Get EXPENSE invoices
+                const invoiceWhere = {
                     companyId,
-                    debit: { gt: 0 }, // Only debit entries = expense
-                    account: {
-                        type: 'EXPENSE',
-                        ...(category && { name: { contains: category, mode: 'insensitive' } })
-                    },
+                    type: 'EXPENSE',
                     ...(fromDate && { date: { gte: new Date(fromDate) } }),
                     ...(toDate && { date: { lte: new Date(toDate) } })
                 }
 
-                const [rows, total] = await Promise.all([
-                    fastify.prisma.journalEntry.findMany({
-                        where,
-                        skip,
-                        take,
-                        orderBy: { date: 'desc' },
-                        include: {
-                            account: true
+                const invoices = await fastify.prisma.invoice.findMany({
+                    where: invoiceWhere,
+                    skip,
+                    take,
+                    orderBy: { date: 'desc' },
+                    include: {
+                        expenseImages: {
+                            include: { image: true }
                         }
-                    }),
-                    fastify.prisma.journalEntry.count({ where })
-                ])
+                    }
+                })
 
-                return reply.code(200).send({
+                const invoiceIds = invoices.map(i => i.id)
+
+                // 2️⃣ Fetch related EXPENSE journal entries
+                const journals = await fastify.prisma.journalEntry.findMany({
+                    where: {
+                        companyId,
+                        debit: { gt: 0 },
+                        account: {
+                            type: 'EXPENSE',
+                            ...(category && {
+                                name: { contains: category, mode: 'insensitive' }
+                            })
+                        }
+                    },
+                    include: { account: true }
+                })
+
+                // 3️⃣ Map invoiceNumber → journal entry
+                const journalByInvoice = {}
+                journals.forEach(j => {
+                    const match = invoices.find(inv =>
+                        j.description?.includes(inv.invoiceNumber)
+                    )
+                    if (match) {
+                        journalByInvoice[match.id] = j
+                    }
+                })
+
+                // 4️⃣ Shape response (UI-friendly)
+                const data = invoices
+                    .filter(inv => !category || journalByInvoice[inv.id])
+                    .map(inv => {
+                        const journal = journalByInvoice[inv.id]
+                        return {
+                            id: inv.id,
+                            category: journal?.account?.name ?? 'Expense',
+                            date: inv.date,
+                            amount: inv.totalAmount,
+                            description:
+                                journal?.description ?? `Expense Invoice ${inv.invoiceNumber}`,
+                            images: inv.expenseImages.map(e => ({
+                                id: e.image.id,
+                                url: e.image.url
+                            }))
+                        }
+                    })
+
+                return reply.send({
                     statusCode: '00',
                     message: 'Expenses fetched successfully',
-                    data: rows,
-                    total
+                    data,
+                    total: data.length
                 })
             } catch (err) {
                 fastify.log.error(err)

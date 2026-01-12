@@ -8,40 +8,7 @@ module.exports = async function (fastify, opts) {
     fastify.post(
         '/vendors',
         {
-            preHandler: checkRole("ADMIN"),
-            schema: {
-                tags: ['Vendors'],
-                summary: 'Create a new vendor',
-                body: {
-                    type: 'object',
-                    required: ['name'],
-                    properties: {
-                        name: { type: 'string' },
-                        email: { type: 'string' },
-                        phone: { type: 'string' },
-                        address: { type: 'string' },
-                        gstin: { type: 'string'}
-                    }
-                },
-                response: {
-                    200: {
-                        type: 'object',
-                        properties: {
-                            statusCode: { type: 'string' },
-                            data: {
-                                type: 'object',
-                                properties: {
-                                    id: { type: 'string' },
-                                    name: { type: 'string' },
-                                    email: { type: 'string' },
-                                    phone: { type: 'string' },
-                                    address: { type: 'string' }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            preHandler: checkRole("ADMIN")
         },
         async (request, reply) => {
             try {
@@ -52,7 +19,7 @@ module.exports = async function (fastify, opts) {
                     data: { name, email, phone, address, companyId, gstin }
                 })
 
-                reply.send({ statusCode: '00', message:"Vendor created successfully", data: vendor })
+                reply.send({ statusCode: '00', message: "Vendor created successfully", data: vendor })
             } catch (err) {
                 request.log.error(err)
                 reply.status(500).send({ statusCode: '99', error: 'Vendor creation failed' })
@@ -80,7 +47,7 @@ module.exports = async function (fastify, opts) {
                         email: { type: 'string' },
                         phone: { type: 'string' },
                         address: { type: 'string' },
-                        gstin: { type: 'string'}
+                        gstin: { type: 'string' }
                     }
                 }
             }
@@ -149,16 +116,18 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors/:id',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole('ADMIN'),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Get vendor by ID',
                 params: {
                     type: 'object',
                     required: ['id'],
-                    properties: { id: { type: 'string' } }
-                }
-            }
+                    properties: {
+                        id: { type: 'string' },
+                    },
+                },
+            },
         },
         async (request, reply) => {
             try {
@@ -166,17 +135,137 @@ module.exports = async function (fastify, opts) {
                 const companyId = request.user.companyId
 
                 const vendor = await prisma.vendor.findFirst({
-                    where: { id, companyId }
+                    where: {
+                        id,
+                        companyId,
+                    },
+                    include: {
+                        company: {
+                            select: {
+                                id: true,
+                                name: true,
+                                gstNumber: true,
+                                primaryEmail: true,
+                                primaryPhoneNo: true,
+                            },
+                        },
+                        invoices: {
+                            select: {
+                                id: true,
+                                invoiceNumber: true,
+                                totalAmount: true,
+                                status: true,
+                                type: true,
+                                date: true,
+                                dueDate: true,
+                            },
+                            orderBy: {
+                                createdAt: 'desc',
+                            },
+                        },
+                    },
                 })
 
                 if (!vendor) {
-                    return reply.status(404).send({ statusCode: '01', error: 'Vendor not found' })
+                    return reply.status(404).send({
+                        statusCode: '01',
+                        error: 'Vendor not found',
+                    })
                 }
 
-                reply.send({ statusCode: '00', data: vendor })
+                reply.send({
+                    statusCode: '00',
+                    data: vendor,
+                })
             } catch (err) {
                 request.log.error(err)
-                reply.status(500).send({ statusCode: '99', error: 'Failed to fetch vendor' })
+                reply.status(500).send({
+                    statusCode: '99',
+                    error: 'Failed to fetch vendor',
+                })
+            }
+        }
+    )
+
+    fastify.get(
+        '/vendors/:id/invoices',
+        {
+            preHandler: checkRole('ADMIN'),
+            schema: {
+                tags: ['Vendors'],
+                summary: 'Get vendor invoices',
+                querystring: {
+                    type: 'object',
+                    properties: {
+                        startDate: { type: 'string' },
+                        endDate: { type: 'string' },
+                        take: { type: 'number' },
+                    },
+                },
+                params: {
+                    type: 'object',
+                    required: ['id'],
+                    properties: {
+                        id: { type: 'string' },
+                    },
+                },
+            },
+        },
+        async (request, reply) => {
+            try {
+                const { startDate, endDate, take } = request.query
+                const vendorId = request.params.id
+                const companyId = request.user.companyId
+
+                const invoices = await fastify.prisma.invoice.findMany({
+                    where: {
+                        vendorId,
+                        companyId,
+                        ...(startDate && endDate
+                            ? {
+                                date: {
+                                    gte: new Date(startDate),
+                                    lte: new Date(endDate),
+                                },
+                            }
+                            : {}),
+                    },
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                    take: Number(take) || 10,
+                    include: {
+                        items: {
+                            include: {
+                                product: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        sku: true,
+                                    },
+                                },
+                                taxRate: true,
+                            },
+                        },
+                        payments: true,
+                        invoiceTax: {
+                            include: {
+                                taxRate: true,
+                            },
+                        },
+                    },
+                })
+
+                reply.send({
+                    statusCode: '00',
+                    data: invoices,
+                })
+            } catch (err) {
+                request.log.error(err)
+                reply.status(500).send({
+                    statusCode: '99',
+                    error: 'Failed to fetch vendor invoices',
+                })
             }
         }
     )

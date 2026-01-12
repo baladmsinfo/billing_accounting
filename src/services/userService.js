@@ -57,11 +57,18 @@ async function createUser(prisma, data) {
       // Income
       { name: 'Sales Revenue', type: 'INCOME', code: '4000' },
 
+      // Contra Income (Sales Return)
+      { name: 'Sales Return', type: 'INCOME', code: '4010' },
+
       // Expenses
-      { name: 'Purchases', type: 'EXPENSE', code: '5000' }, 
-      { name: 'Rent Expense', type: 'EXPENSE', code: '5000' },
-      { name: 'Salaries Expense', type: 'EXPENSE', code: '5100' },
-      { name: 'Utilities Expense', type: 'EXPENSE', code: '5200' },
+      { name: 'Purchases', type: 'EXPENSE', code: '5000' },
+
+      // Contra Expense (Purchase Return)
+      { name: 'Purchase Return', type: 'EXPENSE', code: '5010' },
+
+      { name: 'Rent Expense', type: 'EXPENSE', code: '5100' },
+      { name: 'Salaries Expense', type: 'EXPENSE', code: '5200' },
+      { name: 'Utilities Expense', type: 'EXPENSE', code: '5300' },
     ];
 
     await create_license(prisma, {

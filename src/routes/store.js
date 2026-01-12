@@ -9,9 +9,13 @@ const {
     getCustomerCarts
 } = require("../services/cartService");
 
+const { getAccountId } = require("../services/invoiceService");
+
 const productSvc = require('../services/productService')
 
 const checkRole = require('../utils/checkRole')
+
+const Decimal = require("decimal.js");
 
 module.exports = async function (fastify) {
     const prisma = fastify.prisma;
@@ -21,44 +25,77 @@ module.exports = async function (fastify) {
     // -------------------------------------------------------
 
     fastify.get("/init/:id", async (req, reply) => {
-
         const tenant = req.params.id
 
         try {
-
             const data = await prisma.company.findUnique({
                 where: { tenant },
-                select: {
-                    id: true,
-                    name: true,
-                    tenant: true,
-                    shortname: true,
-                    currency: true
+                include: {
+                    currency: true,
+
+                    // ✅ ONLY DEFAULT BANNER
+                    banners: {
+                        where: {
+                            manage: true
+                        },
+                        take: 1   // extra safety (even if logic breaks someday)
+                    }
                 }
-            });
+            })
 
             if (!data) {
                 return reply.code(404).send({
                     statusCode: "99",
                     message: "Tenant not found",
-                });
+                })
             }
 
-            return {
+            return reply.send({
                 statusCode: "00",
                 message: "Tenant fetched successfully",
-                data: data,
-            };
+                data
+            })
 
         } catch (error) {
             return reply.code(500).send({
                 statusCode: "99",
                 message: "Failed to fetch tenant",
                 error: error.message,
-            });
+            })
         }
+    })
 
-    });
+    fastify.get('/me', async (request, reply) => {
+        try {
+            const company = await fastify.prisma.company.findUnique({
+                where: { id: request.companyId },
+                include: {
+                    currency: true
+                }
+            })
+
+            if (!company) {
+                return reply.code(404).send({
+                    statusCode: 404,
+                    message: 'Company not found',
+                })
+            }
+
+
+            return reply.code(200).send({
+                statusCode: 200,
+                message: 'Company fetched successfully',
+                company,
+            })
+        } catch (err) {
+            request.log.error(err)
+            return reply.code(500).send({
+                statusCode: 500,
+                message: 'Internal server error',
+                error: err.message,
+            })
+        }
+    })
 
     fastify.get("/products", async (req, reply) => {
         try {
@@ -114,7 +151,36 @@ module.exports = async function (fastify) {
         }
     });
 
+    fastify.get(
+        "/banners",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.companyId;
 
+                const banners = await fastify.prisma.banner.findMany({
+                    where: { companyId },
+                    orderBy: { createdAt: "desc" },
+                    include: {
+                        image: true
+                    }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Banners fetched successfully",
+                    data: banners
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
 
     fastify.get("/product/:id", async (req) => {
         return prisma.product.findUnique({
@@ -571,7 +637,9 @@ module.exports = async function (fastify) {
     fastify.get("/cart/:cartId", async (req) => {
         const { cartId } = req.params;
 
-        const cart = await prisma.cart.findUnique({
+        console.log("Getting cartId", cartId);
+
+        const fullCart = await prisma.cart.findUnique({
             where: { id: cartId },
             include: {
                 items: {
@@ -583,12 +651,66 @@ module.exports = async function (fastify) {
             }
         });
 
-        if (!cart) {
+        console.log("Getting cart", cartId);
+
+        if (!fullCart) {
             return {
                 statusCode: "01",
                 message: "Cart not found"
             };
         }
+
+        let subtotal = 0;
+        let taxTotal = 0;
+
+        for (const ci of fullCart.items) {
+            // prefer ci.price and ci.quantity saved on line
+            const lineBase = (ci.price || 0) * (ci.quantity || 0);
+            subtotal += lineBase;
+
+            // determine tax rate: prefer ci.taxRate, else item.taxRate
+            const taxRate =
+                (ci.taxRate && typeof ci.taxRate.rate === "number" ? ci.taxRate.rate : null) ??
+                (ci.item && ci.item.taxRate && typeof ci.item.taxRate.rate === "number" ? ci.item.taxRate.rate : null);
+
+            if (taxRate != null) {
+                taxTotal += (lineBase * taxRate) / 100;
+            }
+        }
+
+        const grandTotal = subtotal + taxTotal;
+
+        // 7. Persist totals to cart (ensure Cart model has these fields or skip if not)
+        // If your Cart model does not have subtotal/taxTotal/total fields, skip updating DB and just return computed values.
+        const cartUpdateData = {};
+        const cartModelHasTotals = true; // set to false if your Cart model lacks these columns
+
+        // Quick check: only attempt update if those fields exist in DB schema.
+        // (You can change cartModelHasTotals to false if you didn't add columns.)
+        if (cartModelHasTotals) {
+            try {
+                await prisma.cart.update({
+                    where: { id: cartId },
+                    data: {
+                        subtotal: subtotal,
+                        taxTotal: taxTotal,
+                        total: grandTotal,
+                        // optionally update status/updatedAt if needed
+                    },
+                });
+            } catch (e) {
+                // If update fails because fields don't exist, ignore and continue returning computed totals.
+                fastify.log.warn("Unable to persist cart totals; returning computed totals only.", e.message);
+            }
+        }
+
+        // attach computed totals to fullCart response (do not mutate DB object permanently)
+        const cart = {
+            ...fullCart,
+            subtotal,
+            taxTotal,
+            total: grandTotal,
+        };
 
         return {
             statusCode: "00",
@@ -858,176 +980,234 @@ module.exports = async function (fastify) {
     // -------------------------------------------------------
 
 
-    fastify.post(
-        "/checkout",
-        async (req, reply) => {
-            const {
-                cartId,
-                paymentMethod,
-            } = req.body;
+    fastify.post("/checkout", async (req, reply) => {
+        const { cartId, form } = req.body;
 
-            const companyId = req.companyId;
-            const customerId = req.customerId || null;
+        console.log("Checkout request for cartId:", cartId, form);
 
-            return await fastify.prisma.$transaction(async (tx) => {
-                //  CART VALIDATION 
-                const cart = await tx.cart.findUnique({
-                    where: { id: cartId },
-                    include: {
-                        items: {
-                            include: {
-                                item: { include: { taxRate: true } } // 👈 one taxRate only
+        const companyId = req.companyId;
+        let customerId = null;
+
+        if (req.customerId) {
+            customerId = req.customerId;
+        } else {
+            const email = form.email?.trim() || null;
+            const phone = form.phone ? String(form.phone).trim() : null;
+
+            if (email || phone) {
+                const existingCustomer = await fastify.prisma.customer.findFirst({
+                    where: {
+                        companyId,
+                        OR: [
+                            email ? { email } : undefined,
+                            phone ? { phone } : undefined,
+                        ].filter(Boolean),
+                    },
+                    select: { id: true },
+                });
+
+                if (existingCustomer) {
+                    customerId = existingCustomer.id;
+                }
+            }
+        }
+
+        return await fastify.prisma.$transaction(async (tx) => {
+            // --------------------------- CART VALIDATION --------------------------- //
+            const cart = await tx.cart.findUnique({
+                where: { id: cartId },
+                include: {
+                    items: {
+                        include: {
+                            item: {
+                                include: { taxRate: true }
                             }
                         }
                     }
-                });
-                if (!cart || cart.items.length === 0) throw new Error("Cart empty");
+                }
+            });
 
-                const existingCustomer = await tx.customer.findFirst({
+            if (!cart || cart.items.length === 0) {
+                return reply.code(400).send({
+                    statusCode: "01",
+                    message: "Cart empty"
+                });
+            }
+
+            // --------------------------- CUSTOMER HANDLING --------------------------- //
+            let customer = null;
+
+            if (customerId) {
+                customer = await tx.customer.findFirst({
                     where: { id: customerId, companyId }
                 });
 
-                if (customerId && !existingCustomer) {
+                if (!customer) {
                     return reply.code(400).send({
                         statusCode: "01",
                         message: "Customer not found"
                     });
                 }
-
-                //  INVOICE CREATE 
-                const invoice = await tx.invoice.create({
+            } else {
+                // CREATE GUEST CUSTOMER
+                customer = await tx.customer.create({
                     data: {
                         companyId,
-                        customerId,
-                        date: new Date(),
-                        status: "PENDING",
-                        type: "ONLINE",
-                        invoiceNumber: `INV${Date.now()}`,
-                        totalAmount: 0,
-                        taxAmount: 0
+                        name: `${form.firstName} ${form.lastName}`.trim(),
+                        email: form.email || null,
+                        phone: String(form.phone) || null
                     }
                 });
 
-                let totalAmount = new Decimal(0);
-                let totalTax = new Decimal(0);
+                customerId = customer.id;
 
-                //  INVOICE ITEMS / STOCK / TAX 
-                for (const row of cart.items) {
-                    const lineTotal = new Decimal(row.quantity).times(new Decimal(row.price));
-                    totalAmount = totalAmount.plus(lineTotal);
-
-                    let taxAmountForItem = new Decimal(0);
-
-                    if (row.item.taxRate) {
-                        const rate = new Decimal(row.item.taxRate.rate).div(100);
-                        taxAmountForItem = lineTotal.times(rate);
-                        totalTax = totalTax.plus(taxAmountForItem);
-
-                        await tx.invoiceTax.create({
-                            data: {
-                                invoiceId: invoice.id,
-                                taxRateId: row.item.taxRate.id,
-                                companyId,
-                                invoiceType: "ONLINE",
-                                amount: parseFloat(taxAmountForItem.toFixed(2))
-                            }
-                        });
+                // CREATE CUSTOMER ADDRESS
+                await tx.customerAddress.create({
+                    data: {
+                        customerId,
+                        addressLine1: form.address,
+                        city: form.city,
+                        state: form.state,
+                        pincode: form.zip,
+                        isDefault: true
                     }
+                });
+            }
 
-                    await tx.invoiceItem.create({
+            // --------------------------- INVOICE CREATION --------------------------- //
+            const invoice = await tx.invoice.create({
+                data: {
+                    companyId,
+                    customerId,
+                    date: new Date(),
+                    status: "PENDING",
+                    type: "ONLINE",
+                    invoiceNumber: `INV${Date.now()}`,
+                    totalAmount: 0,
+                    taxAmount: 0
+                }
+            });
+
+            let totalAmount = new Decimal(0);
+            let totalTax = new Decimal(0);
+
+            // --------------------------- INVOICE ITEMS & STOCK --------------------------- //
+            for (const row of cart.items) {
+                const lineTotal = new Decimal(row.quantity).times(new Decimal(row.price));
+                totalAmount = totalAmount.plus(lineTotal);
+
+                let taxAmountForItem = new Decimal(0);
+
+                if (row.item.taxRate) {
+                    const rate = new Decimal(row.item.taxRate.rate).div(100);
+                    taxAmountForItem = lineTotal.times(rate);
+                    totalTax = totalTax.plus(taxAmountForItem);
+
+                    await tx.invoiceTax.create({
                         data: {
                             invoiceId: invoice.id,
-                            itemId: row.itemId,
-                            productId: row.productId,
-                            quantity: row.quantity,
-                            price: row.price,
-                            total: parseFloat(lineTotal.toFixed(2)),
-                            taxRateId: row.item.taxRate?.id ?? null
-                        }
-                    });
-
-                    if (row.item.quantity < row.quantity) {
-                        throw new Error(`Insufficient stock for item ${row.item.name}`);
-                    }
-
-                    await tx.item.update({
-                        where: { id: row.itemId },
-                        data: { quantity: { decrement: row.quantity } }
-                    });
-
-                    await tx.stockLedger.create({
-                        data: {
+                            taxRateId: row.item.taxRate.id,
                             companyId,
-                            itemId: row.itemId,
-                            type: "SALE",
-                            quantity: row.quantity,
-                            note: `Sale  invoice ${invoice.invoiceNumber}`
+                            invoiceType: "ONLINE",
+                            amount: parseFloat(taxAmountForItem.toFixed(2))
                         }
                     });
                 }
 
-                //  UPDATE INVOICE TOTALS 
-                await tx.invoice.update({
-                    where: { id: invoice.id },
+                await tx.invoiceItem.create({
                     data: {
-                        totalAmount: parseFloat(totalAmount.toFixed(2)),
-                        taxAmount: parseFloat(totalTax.toFixed(2))
+                        invoiceId: invoice.id,
+                        itemId: row.itemId,
+                        productId: row.productId,
+                        quantity: row.quantity,
+                        price: row.price,
+                        total: parseFloat(lineTotal.toFixed(2)),
+                        taxRateId: row.item.taxRate?.id ?? null
                     }
                 });
 
-                //  JOURNAL ENTRIES 
-                const description = `Invoice ${invoice.invoiceNumber}`;
+                if (row.item.quantity < row.quantity) {
+                    throw new Error(`Insufficient stock for item ${row.item.name}`);
+                }
 
-                await tx.journalEntry.create({
-                    data: {
-                        companyId,
-                        accountId: await getAccountId(tx, companyId, "Accounts Receivable"),
-                        date: new Date(),
-                        description,
-                        debit: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
-                        credit: 0
-                    }
+                await tx.item.update({
+                    where: { id: row.itemId },
+                    data: { quantity: { decrement: row.quantity } }
                 });
 
+                await tx.stockLedger.create({
+                    data: {
+                        companyId,
+                        itemId: row.itemId,
+                        type: "SALE",
+                        quantity: row.quantity,
+                        note: `Sale invoice ${invoice.invoiceNumber}`
+                    }
+                });
+            }
+
+            // --------------------------- UPDATE TOTALS --------------------------- //
+            await tx.invoice.update({
+                where: { id: invoice.id },
+                data: {
+                    totalAmount: parseFloat(totalAmount.toFixed(2)),
+                    taxAmount: parseFloat(totalTax.toFixed(2))
+                }
+            });
+
+            // --------------------------- JOURNAL ENTRIES --------------------------- //
+            const description = `Invoice ${invoice.invoiceNumber}`;
+
+            await tx.journalEntry.create({
+                data: {
+                    companyId,
+                    accountId: await getAccountId(tx, companyId, "Accounts Receivable"),
+                    date: new Date(),
+                    description,
+                    debit: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
+                    credit: 0
+                }
+            });
+
+            await tx.journalEntry.create({
+                data: {
+                    companyId,
+                    accountId: await getAccountId(tx, companyId, "Sales Revenue"),
+                    date: new Date(),
+                    description,
+                    debit: 0,
+                    credit: parseFloat(totalAmount.toFixed(2))
+                }
+            });
+
+            if (totalTax.gt(0)) {
                 await tx.journalEntry.create({
                     data: {
                         companyId,
-                        accountId: await getAccountId(tx, companyId, "Sales Revenue"),
+                        accountId: await getAccountId(tx, companyId, "Tax Payable"),
                         date: new Date(),
                         description,
                         debit: 0,
-                        credit: parseFloat(totalAmount.toFixed(2))
+                        credit: parseFloat(totalTax.toFixed(2))
                     }
                 });
+            }
 
-                if (totalTax.gt(0)) {
-                    await tx.journalEntry.create({
-                        data: {
-                            companyId,
-                            accountId: await getAccountId(tx, companyId, "Tax Payable"),
-                            date: new Date(),
-                            description,
-                            debit: 0,
-                            credit: parseFloat(totalTax.toFixed(2))
-                        }
-                    });
-                }
-
-                //  CLOSE CART 
-                await tx.cart.update({
-                    where: { id: cartId },
-                    data: { status: "CHECKEDOUT" }
-                });
-
-                return reply.send({
-                    statusCode: "00",
-                    message: "Checkout successful",
-                    invoiceId: invoice.id,
-                    customerId
-                });
+            // --------------------------- CLOSE CART --------------------------- //
+            await tx.cart.update({
+                where: { id: cartId },
+                data: { status: "CHECKEDOUT" }
             });
-        }
-    );
+
+            // --------------------------- RESPONSE --------------------------- //
+            return reply.send({
+                statusCode: "00",
+                message: "Checkout successful",
+                invoiceId: invoice.id,
+                customerId
+            });
+        });
+    });
 
     // -------------------------------------------------------
     // 6. POS Quick Checkout (No Cart)

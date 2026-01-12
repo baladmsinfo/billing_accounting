@@ -40,12 +40,121 @@ async function createCustomer(prisma, data) {
 }
 
 async function listCustomers(prisma, companyId, { skip, take }) {
-  return prisma.customer.findMany({
-    where: { companyId },
-    skip,
+  const [data, total] = await prisma.$transaction([
+    prisma.customer.findMany({
+      where: { companyId },
+      skip,
+      take,
+      include: { carts: true, addresses: true },
+    }),
+    prisma.customer.count({
+      where: { companyId },
+    }),
+  ])
+
+  return {
+    statusCode: "00",
+    data,
+    total,
+  }
+}
+
+async function getCustomerById(prisma, customerId, companyId) {
+  return prisma.customer.findFirst({
+    where: {
+      id: customerId,
+      companyId,
+    },
+    include: {
+      company: {
+        select: {
+          id: true,
+          name: true,
+          gstNumber: true,
+          primaryEmail: true,
+          primaryPhoneNo: true,
+        },
+      },
+      addresses: {
+        orderBy: {
+          isDefault: 'desc',
+        },
+      },
+      invoices: {
+        select: {
+          id: true,
+          totalAmount: true,
+          status: true,
+        },
+      },
+      carts: {
+        orderBy: {
+          createdAt: 'desc',
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+              item: {
+                select: {
+                  id: true,
+                  sku: true,
+                  variant: true,
+                  price: true,
+                },
+              },
+              taxRate: true,
+            },
+          },
+        },
+      },
+    },
+  })
+}
+
+async function getCustomerInvoices(
+  prisma,
+  customerId,
+  companyId,
+  { startDate, endDate, take = 10 }
+) {
+  return prisma.invoice.findMany({
+    where: {
+      customerId,
+      companyId,
+      ...(startDate && endDate
+        ? {
+          date: {
+            gte: new Date(startDate),
+            lte: new Date(endDate),
+          },
+        }
+        : {}),
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
     take,
-    include: { carts: true , addresses: true},
-  });
+    include: {
+      items: {
+        include: {
+          product: {
+            select: { id: true, name: true, sku: true },
+          },
+          taxRate: true,
+        },
+      },
+      payments: true,
+      invoiceTax: {
+        include: { taxRate: true },
+      },
+    },
+  })
 }
 
 async function updateCustomer(prisma, id, data, companyId) {
@@ -84,6 +193,8 @@ async function deleteCustomer(prisma, id, companyId) {
 }
 
 module.exports = {
+  getCustomerById,
+  getCustomerInvoices,
   createCustomer,
   listCustomers,
   updateCustomer,

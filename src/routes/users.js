@@ -6,6 +6,7 @@ const { generateApiKey } = require('../utils/keyGenerator')
 const { generateShortTenant, getShortName } = require('../utils/tenant')
 const bcrypt = require('bcrypt');
 const checkRole = require('../utils/checkRole')
+const { create_license } = require('../services/licenses')
 
 module.exports = async function (fastify, opts) {
 
@@ -135,6 +136,12 @@ module.exports = async function (fastify, opts) {
         mobile_no: primaryPhoneNo,
         password: password,
       });
+
+      await create_license(prisma, {
+        companyID: company.id,
+        plan: '001',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+      })
 
       // await enqueueUserRegistrationEmail({
       //   to: secondaryEmail,
@@ -353,8 +360,8 @@ module.exports = async function (fastify, opts) {
         where: { id: request.user.id },
         include: {
           company: {
-                    include: { currency: true }
-                }
+            include: { currency: true }
+          }
         },
       })
 

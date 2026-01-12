@@ -1,5 +1,7 @@
 const { hashPassword } = require('../utils/hash')
 
+const { create_license } = require('./licenses')
+
 async function createUser(prisma, data) {
   console.log('Creating user:', data)
   data.password = await hashPassword(data.password)
@@ -61,6 +63,12 @@ async function createUser(prisma, data) {
       { name: 'Salaries Expense', type: 'EXPENSE', code: '5100' },
       { name: 'Utilities Expense', type: 'EXPENSE', code: '5200' },
     ];
+
+    await create_license(prisma, {
+      companyID: company.id,
+      plan: '001',
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+    })
 
     await tx.account.createMany({
       data: defaultAccounts.map(acc => ({

@@ -107,7 +107,7 @@ fastify.after(async () => {
       ];
     } else {  
       publicPaths = [
-        "api/store/init",
+        "/api/store/init",
         "/api/users/login",
         "/api/users/send-otp",
         "/api/users/forgotpassword",

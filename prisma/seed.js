@@ -153,21 +153,21 @@ async function ensureBranches(company, count) {
       branch = await prisma.branch.create({
         data: {
           name,
-          address: `Branch ${i} Address`,
           city: company.city,
           state: company.state,
           pincode: company.pincode,
           companyId: company.id,
+          addressLine1: `Registered Office - ${company.city}`,
         },
       });
     } else {
       branch = await prisma.branch.update({
         where: { id: branch.id },
         data: {
-          address: `Branch ${i} Address`,
           city: company.city,
           state: company.state,
           pincode: company.pincode,
+          addressLine1: `Registered Office - ${company.city}`,
         },
       });
     }
@@ -178,13 +178,19 @@ async function ensureBranches(company, count) {
 
 async function ensureAccounts(company) {
   const items = [
-    { name: "Cash", type: "ASSET" },
-    { name: "Bank", type: "ASSET" },
-    { name: "Accounts Receivable", type: "ASSET" },
-    { name: "Inventory", type: "ASSET" },
-    { name: "Accounts Payable", type: "LIABILITY" },
-    { name: "Sales Revenue", type: "INCOME" },
-    { name: "Purchases", type: "EXPENSE" },
+        { name: 'Cash', type: 'ASSET', code: '1000' },
+        { name: 'Bank', type: 'ASSET', code: '1010' },
+        { name: 'Accounts Receivable', type: 'ASSET', code: '1100' },
+        { name: 'Inventory', type: 'ASSET', code: '1200' },
+        { name: 'Tax Receivable', type: 'ASSET', code: '1300' },
+        { name: 'Accounts Payable', type: 'LIABILITY', code: '2000' },
+        { name: 'Tax Payable', type: 'LIABILITY', code: '2100' },
+        { name: 'Owner Equity', type: 'EQUITY', code: '3000' },
+        { name: 'Sales Revenue', type: 'INCOME', code: '4000' },
+        { name: 'Purchases', type: 'EXPENSE', code: '5000' },
+        { name: 'Rent Expense', type: 'EXPENSE', code: '5001' },
+        { name: 'Salaries Expense', type: 'EXPENSE', code: '5100' },
+        { name: 'Utilities Expense', type: 'EXPENSE', code: '5200' },
   ];
 
   for (const a of items) {

@@ -98,12 +98,42 @@ model Company {
   state        String
   pincode      Int
   companyType  String
-
+  license      License?
   currencyId String
   currency   Currency @relation(fields: [currencyId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Plan {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  branch    Int?     @default(1)
+  licenses  License[]
+  createdAt DateTime @default(now())
+}
+
+model License {
+  id          String   @id @default(uuid())
+  licenseKey  String   @unique
+  planId      String
+  companyId   String?  @unique
+  company     Company? @relation(fields: [companyId], references: [id])
+  deviceId    String?
+  expiresAt   DateTime?
+  status      LicenseStatus @default(ACTIVE)
+  createdAt   DateTime @default(now())
+  activatedAt DateTime?
+  plan Plan @relation(fields: [planId], references: [id])
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  SUSPENDED
 }
 
 model Banner {

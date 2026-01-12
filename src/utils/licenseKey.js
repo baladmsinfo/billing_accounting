@@ -2,10 +2,12 @@
 const crypto = require('crypto')
 //import jwt from "jsonwebtoken";
 
-export function generateLicenseKey(prefix = "BBX") {
+function generateLicenseKey(prefix = "BBX") {
   const random = crypto.randomBytes(16).toString("hex").toUpperCase();
   return `${prefix}-${random.match(/.{1,4}/g).join("-")}`;
 }
+
+module.exports = { generateLicenseKey }
 
 // export function LicenseToken(company){
 //   return jwt.sign(

@@ -10,10 +10,10 @@
 // module.exports = connection;
 
 const connection = {
-  host: "148.135.138.62",
-  port: 5434,
+  host: "jk48s404c8kw4scwg8440c00",
+  port: 6379,
   username: "default",
-  password: "4lJPC5hKh26HXM5dSnnisefPs8xRjcVUAboh5GhexE7B73RZ0xzdzAf626vUOVKn",
+  password: "EbUE4126JjoXaYC6oTwzcad31XSSXlFYOYNZw4Qiqsu1Jg6kX4EgI3XiTfyB8QTX",
 };
 
 module.exports = connection;

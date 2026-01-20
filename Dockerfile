@@ -14,7 +14,7 @@ RUN npx prisma generate
 COPY . .
 
 # Run migrations and start Fastify
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
 
 EXPOSE 3000
 

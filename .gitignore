@@ -1,3 +1,8 @@
+# Environment files (ignore ALL env files)
+.env
+.env.*
+!.env.example
+
 # Node
 node_modules/
 npm-debug.log*
@@ -5,18 +10,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Ignore all env files
-.env
-.env.*
-!.env.example
-
 # Logs
-logs
+logs/
 *.log
-pids
-*.pid
-*.seed
-*.pid.lock
 
 # Build output
 dist/
@@ -25,13 +21,11 @@ coverage/
 .cache/
 
 # Prisma
-prisma/migrations/dev.db
-prisma/migrations/.DS_Store
+prisma/migrations/
+!prisma/migrations/.gitkeep
 
-# Editor files
+# Editor
 .vscode/
 .idea/
 .DS_Store
-
-# OS files
 Thumbs.db

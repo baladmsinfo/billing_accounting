@@ -108,9 +108,6 @@ async function ensureCurrency() {
   console.log("Currency UPSERT completed successfully.");
 }
 
-
-
-
 async function ensureCompany(c) {
   let company = await prisma.company.findFirst({ where: { name: c.name } });
   if (!company) {

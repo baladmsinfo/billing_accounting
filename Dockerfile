@@ -1,45 +1,26 @@
-FROM node:20
+FROM node:20-alpine
+
 WORKDIR /app
 
-# Install dependencies
-COPY package*.json ./
-RUN npm install
+# Set environment
+ENV NODE_ENV=production
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
 
-# Prisma client if needed
+# Install dependencies first (better caching)
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy Prisma schema
 COPY prisma ./prisma
-RUN npx prisma migrate deploy 
+
+# Generate Prisma client
 RUN npx prisma generate
 
-# Seed after code is available
-RUN npm run seed
+# Copy application source
+COPY . .
 
-# Start Fastify app (CommonJS entrypoint)
+# Expose Fastify port
 EXPOSE 3000
-CMD ["npm", "run", "start"]
 
-# FROM node:20
-
-# WORKDIR /app
-
-# # Copy only package files first (to use Docker cache)
-# COPY package*.json ./
-
-# # Install dependencies
-# RUN npm install
-
-# # Copy Prisma schema
-# COPY prisma ./prisma
-
-# # --- FIX FOR PRISMA ENGINE DOWNLOAD ERROR ---
-# ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
-# # --------------------------------------------
-# RUN npx prisma generate
-
-# # Copy the entire app source
-# COPY . .
-
-# # Expose port
-# EXPOSE 3000
-
-# # Run Prisma migrations and start server
-# CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+# Run migrations at container start (NOT build time)
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && node server.js"]

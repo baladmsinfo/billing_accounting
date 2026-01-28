@@ -5,18 +5,17 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Prisma client setup
+# Prisma client if needed
 COPY prisma ./prisma
-ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+RUN npx prisma migrate deploy 
 RUN npx prisma generate
 
-# Copy app source
-COPY . .
+# Seed after code is available
+RUN npm run seed
 
-# Run migrations and start Fastify
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
-
+# Start Fastify app (CommonJS entrypoint)
 EXPOSE 3000
+CMD ["npm", "run", "start"]
 
 # FROM node:20
 

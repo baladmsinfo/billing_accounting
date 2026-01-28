@@ -67,7 +67,7 @@ module.exports = async function (fastify, opts) {
           companyType: companyData.companyType,
           currencyId: companyData.currencyId,
           shortname: await generateShortTenant(companyData.name),
-          tenant: await getShortName(companyData.name),
+          tenant: companyData.tenant,
           publicapiKey: generateApiKey(),
           privateapiKey: generateApiKey()
         }
@@ -201,7 +201,7 @@ module.exports = async function (fastify, opts) {
   //     const currency = await fastify.prisma.currency.findUnique({
   //       where: { id: companyData.currencyId }
   //     });
-      
+
   //     if (!currency) {
   //       return reply.send({ statusCode: "01", message: "Invalid currencyId" });
   //     }
@@ -328,6 +328,23 @@ module.exports = async function (fastify, opts) {
   //     });
   //   }
   // });
+
+
+  fastify.get("/check-tenant", async (request, reply) => {
+    const { tenant } = request.query
+
+    if (!tenant || tenant.length < 3) {
+      return reply.send({ available: false })
+    }
+
+    const existing = await fastify.prisma.company.findUnique({
+      where: { tenant }
+    })
+
+    return reply.send({
+      available: !existing
+    })
+  })
 
   // Login
   fastify.post('/login', {

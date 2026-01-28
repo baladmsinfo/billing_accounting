@@ -329,7 +329,7 @@ async function ensureProductsAndItems(company) {
 
   const sizeVariants = ["100g", "250g", "500g", "1kg", "2kg", "5kg"]
 
-  const itemsCreated = []
+  const itemsCreated = [] 
 
   for (const sub of subCategories) {
     const productCount = Math.max(5, rand(5, 8))
@@ -806,7 +806,6 @@ async function seedCreateExpense({
     return invoice
   })
 }
-
 
 async function main() {
   console.log("🌱 Starting full idempotent seed...");

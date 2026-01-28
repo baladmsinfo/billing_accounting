@@ -1,19 +1,13 @@
-// require("dotenv").config();
-
-// const connection = {
-//   host: process.env.REDIS_HOST,
-//   port: Number(process.env.REDIS_PORT),
-//   username: process.env.REDIS_USERNAME,
-//   password: process.env.REDIS_PASSWORD,
-// };
-
-// module.exports = connection;
+require("dotenv").config();
 
 const connection = {
-  host: "jk48s404c8kw4scwg8440c00",
-  port: 6379,
-  username: "default",
-  password: "EbUE4126JjoXaYC6oTwzcad31XSSXlFYOYNZw4Qiqsu1Jg6kX4EgI3XiTfyB8QTX",
+  host: process.env.REDIS_HOST || "127.0.0.1",
+  port: Number(process.env.REDIS_PORT) || 6379,
+  username: process.env.REDIS_USERNAME || undefined, // optional
+  password: process.env.REDIS_PASSWORD || undefined, // optional
+  db: Number(process.env.REDIS_DB) || 0,
 };
+
+console.log("Redis config:", connection);
 
 module.exports = connection;

@@ -171,9 +171,9 @@ async function createInvoice(prisma, data) {
       })
 
       // Update stock
-      const item = await tx.item.findUnique({ where: { id: it.itemId } })
+      const item = await tx.item.findUnique({ where: { id: it.itemId }, include: { product: true } })
       if (!item) throw new Error(`Item not found: ${it.itemId}`)
-      if (item.quantity < it.quantity) throw new Error(`Insufficient stock for item ${it.itemId}`)
+      if (item.quantity < it.quantity) throw new Error(`Insufficient stock for "${item.product?.name} - ${item.variant}"`)
 
       await tx.stockLedger.create({
         data: {

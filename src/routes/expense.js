@@ -55,7 +55,31 @@ module.exports = async function (fastify, opts) {
                 }
 
                 if (!taxRateId) {
-                    await fastify.prisma.$transaction(async (tx) => {
+                    const invoice = await fastify.prisma.$transaction(async (tx) => {
+
+                        const inv = await tx.invoice.create({
+                            data: {
+                                companyId,
+                                date: new Date(date),
+                                dueDate: new Date(date),
+                                type: 'EXPENSE',
+                                status: 'PAID',
+                                totalAmount: amount,
+                                taxAmount: 0,
+                                invoiceNumber: `EXP-${Date.now()}`,
+                            },
+                        })
+
+                        if (imageId && imageUrl) {
+                            await tx.expenseImage.create({
+                                data: {
+                                    invoiceId: inv.id,
+                                    imageId,
+                                    imageUrl,
+                                }
+                            })
+                        }
+
                         await tx.journalEntry.create({
                             data: {
                                 companyId,
@@ -77,10 +101,17 @@ module.exports = async function (fastify, opts) {
                                 accountId: cashAccount.id
                             }
                         })
+
+                        return inv
                     })
 
-                    return reply.send({ statusCode: '00', message: 'Expense added successfully' })
+                    return reply.send({
+                        statusCode: '00',
+                        message: 'Expense added successfully (without tax)',
+                        data: invoice
+                    })
                 }
+
 
                 const invoice = await fastify.prisma.$transaction(async (tx) => {
                     const tax = await tx.taxRate.findUnique({ where: { id: taxRateId } })

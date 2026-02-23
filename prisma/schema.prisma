@@ -330,7 +330,7 @@ model Item {
   location  String?
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
-
+  barcode   String? @unique
   invoiceItems InvoiceItem[]
   stock        StockLedger[]
   cartItems    CartItem[]

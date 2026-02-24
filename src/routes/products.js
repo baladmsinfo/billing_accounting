@@ -22,7 +22,7 @@ module.exports = async function (fastify, opts) {
             where: { companyId: data.companyId },
           });
 
-          if (totalProducts >= 25) {
+          if (totalProducts >= 10) {
             return reply.code(201).send({
               statusCode: "05",
               message:

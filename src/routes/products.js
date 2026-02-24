@@ -3,15 +3,14 @@ const productSvc = require('../services/productService')
 const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
+
   // Create product
   fastify.post(
     '/',
-    {
-      preHandler: checkRole("ADMIN"),
-    },
+    { preHandler: checkRole("ADMIN") },
     async (request, reply) => {
       try {
-        const data = { ...request.body, companyId: request.user.companyId }
+        const data = { ...request.body, companyId: request.user.companyId };
 
         const company = await fastify.prisma.company.findUnique({
           where: { id: data.companyId },
@@ -26,94 +25,88 @@ module.exports = async function (fastify, opts) {
           if (totalProducts >= 25) {
             return reply.code(201).send({
               statusCode: "05",
-              message: "Trial limit reached. You can only add 10 products. Please Subscribe a plan to add more products.",
+              message:
+                "Trial limit reached. You can only add 10 products. Please Subscribe a plan to add more products.",
             });
           }
         }
 
-        const productData = {
-          name: data.name,
-          sku: data.sku,
-          description: data.description,
-          companyId: data.companyId,
-          imageUrl: data.imageUrl,
-        }
-
-        if (data.categoryId) productData.categoryId = data.categoryId
-        if (data.subCategoryId) productData.subCategoryId = data.subCategoryId
-
         const product = await fastify.prisma.product.create({
-          data: productData
-        })
+          data: {
+            name: data.name,
+            sku: data.sku,
+            description: data.description,
+            companyId: data.companyId,
+            imageUrl: data.imageUrl,
+            categoryId: data.categoryId ?? null,
+            subCategoryId: data.subCategoryId ?? null
+          }
+        });
 
+        // Assign images
         if (data.imageId) {
           await fastify.prisma.images.update({
             where: { id: data.imageId },
-            data: { productId: product.id }
-          })
+            data: { productId: product.id },
+          });
         }
 
         if (Array.isArray(data.imageIds) && data.imageIds.length > 0) {
           await fastify.prisma.images.updateMany({
             where: { id: { in: data.imageIds } },
-            data: { productId: product.id }
-          })
+            data: { productId: product.id },
+          });
         }
 
+        // Create item(s)
         if (Array.isArray(data.items) && data.items.length > 0) {
           for (const item of data.items) {
             const createdItem = await fastify.prisma.item.create({
               data: {
                 variant: item.variant,
                 price: item.price,
-                quantity: item.quantity ?? 0,
-                MRP: item.MRP,
-                location: item.location,
-                taxRateId: item.taxRateId,
-                productId: product.id,
+                MRP: item.mrp,
                 companyId: data.companyId,
-                branches: { connect: [{ id: item.branchId }] },
+                productId: product.id,
+                taxRateId: item.taxRateId ?? null,
+                ...(item.branchId
+                  ? {
+                    branchItems: {
+                      create: [
+                        {
+                          branchId: item.branchId,
+                          quantity: 0
+                        }
+                      ]
+                    }
+                  }
+                  : {})
               }
-            })
-
-            if (item.quantity && item.quantity > 0) {
-              await fastify.prisma.stockLedger.create({
-                data: {
-                  itemId: createdItem.id,
-                  companyId: data.companyId,
-                  type: 'PURCHASE',
-                  quantity: item.quantity,
-                  note: 'Initial stock on product creation'
-                }
-              })
-            }
+            });
           }
         }
 
         const productWithRelations = await fastify.prisma.product.findUnique({
           where: { id: product.id },
-          include: {
-            items: true,
-            images: true
-          }
-        })
+          include: { items: true, images: true },
+        });
 
         return reply.code(201).send({
-          statusCode: '00',
-          message: 'Product created successfully',
-          data: productWithRelations
-        })
+          statusCode: "00",
+          message: "Product created successfully",
+          data: productWithRelations,
+        });
 
       } catch (error) {
-        fastify.log.error(error)
+        fastify.log.error(error);
         return reply.code(500).send({
-          statusCode: '99',
-          message: 'Failed to create product',
-          error: error.message
-        })
+          statusCode: "99",
+          message: "Failed to create product",
+          error: error.message,
+        });
       }
     }
-  )
+  );
 
   fastify.post("/upload/product-image", {
     preHandler: checkRole("ADMIN"),
@@ -215,13 +208,21 @@ module.exports = async function (fastify, opts) {
           skip,
           take: limit,
           include: {
-            items: { include: { branches: true } },
+            items: {
+              include: {
+                branchItems: {
+                  include: {
+                    branch: true
+                  }
+                }
+              }
+            },
             category: true,
             subCategory: true,
           },
-          orderBy: { createdAt: "desc" },
+          orderBy: { createdAt: "desc" }
         }),
-        fastify.prisma.product.count({ where }),
+        fastify.prisma.product.count({ where })
       ])
 
       return reply.send({
@@ -523,96 +524,90 @@ module.exports = async function (fastify, opts) {
     }
   )
 
+  // Add item to product
   fastify.post(
     '/:productId/items',
-    {
-      preHandler: checkRole("ADMIN"),
-    },
+    { preHandler: checkRole("ADMIN") },
     async (request, reply) => {
       try {
-        const { productId } = request.params
-        const { variant, price, taxrate, quantity, branchId } = request.body
-        const companyId = request.user.companyId
+        const { productId } = request.params;
+        const { variant, price, taxrate, branchId, MRP } = request.body;
+        const companyId = request.user.companyId;
 
+        // Validate product
         const product = await fastify.prisma.product.findFirst({
           where: { id: productId, companyId }
-        })
+        });
 
         if (!product) {
           return reply.code(404).send({
-            statusCode: '01',
-            message: 'Product not found'
-          })
+            statusCode: "01",
+            message: "Product not found",
+          });
         }
 
-        let tax = null
-
+        // Validate tax rate (if provided)
+        let tax = null;
         if (taxrate) {
           tax = await fastify.prisma.taxRate.findFirst({
-            where: {
-              id: taxrate,
-              companyId
-            }
-          })
+            where: { id: taxrate, companyId },
+          });
 
           if (!tax) {
             return reply.code(400).send({
-              statusCode: '01',
-              message: `Invalid taxrateId: ${taxrate}`
-            })
+              statusCode: "01",
+              message: `Invalid taxrateId: ${taxrate}`,
+            });
           }
         }
 
-        const branchConnect = branchId ? { branches: { connect: [{ id: branchId }] } } : {}
-
+        // Build item data (NO QUANTITY)
         const itemData = {
           variant,
           price,
-          quantity,
+          MRP,
           companyId,
           productId,
-          ...(taxrate && tax ? { taxRateId: taxrate } : {}),
-          ...branchConnect
-        }
+          ...(taxrate ? { taxRateId: taxrate } : {}),
+          ...(branchId
+            ? {
+              branchItems: {
+                create: [
+                  {
+                    branchId,
+                    quantity: 0
+                  }
+                ]
+              }
+            }
+            : {})
+        };
 
         const newItem = await fastify.prisma.item.create({
-          data: itemData
-        })
-
-        if (quantity > 0) {
-          await fastify.prisma.stockLedger.create({
-            data: {
-              itemId: newItem.id,
-              companyId,
-              type: 'PURCHASE',
-              quantity,
-              note: 'New item added to product'
-            }
-          })
-        }
+          data: itemData,
+        });
 
         const updatedProduct = await fastify.prisma.product.findUnique({
           where: { id: productId },
-          include: { items: true }
-        })
+          include: { items: true },
+        });
 
         return reply.code(201).send({
-          statusCode: '00',
-          message: 'Item added successfully',
-          data: updatedProduct
-        })
+          statusCode: "00",
+          message: "Item added successfully",
+          data: updatedProduct,
+        });
 
       } catch (error) {
-        fastify.log.error(error)
+        fastify.log.error(error);
         return reply.code(500).send({
-          statusCode: '99',
-          message: 'Failed to add item',
-          error: error.message
-        })
+          statusCode: "99",
+          message: "Failed to add item",
+          error: error.message,
+        });
       }
     }
-  )
-
+  );
 
   fastify.put(
     '/item/:itemId/price',

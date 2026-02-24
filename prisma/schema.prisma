@@ -193,14 +193,15 @@ model Branch {
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 
-  items Item[]
-
-  users User[]
+  users      User[]
+  invoices   Invoice[]
+  branchItems BranchItem[] 
+  stockLedger StockLedger[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([name, companyId], name: "name_companyId")
+  @@unique([name, companyId])
 }
 
 model Account {
@@ -318,27 +319,46 @@ enum PaymentMethod {
   OTHER
 }
 
+model BranchItem {
+  id        String   @id @default(uuid())
+  branchId  String
+  itemId    String
+  quantity  Int      @default(0)
+  price     Float?  
+  mrp       Float?   
+  location  String?  
+  barcode   String?  @unique
+
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  item      Item     @relation(fields: [itemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, itemId])
+}
+
 model Item {
   id        String  @id @default(uuid())
   productId String
   product   Product @relation(fields: [productId], references: [id])
+  
   sku       String?
   variant   String?
   price     Float
   MRP       Float?
-  quantity  Int     @default(0)
-  location  String?
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
-  barcode   String? @unique
+ 
+  stockLedger StockLedger[]
+
+  branchItems BranchItem[] 
+
   invoiceItems InvoiceItem[]
-  stock        StockLedger[]
   cartItems    CartItem[]
 
   taxRateId String?
   taxRate   TaxRate? @relation(fields: [taxRateId], references: [id])
-
-  branches Branch[] // 👈 Many-to-many
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -447,10 +467,13 @@ model Vendor {
 model Invoice {
   id            String  @id @default(uuid())
   invoiceNumber String
-  companyId     String
-  company       Company @relation(fields: [companyId], references: [id])
 
-  // Either Customer (SALE) or Vendor (PURCHASE)
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  branchId String?               // OPTIONAL BRANCH
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
 
@@ -458,10 +481,10 @@ model Invoice {
   vendor   Vendor? @relation(fields: [vendorId], references: [id])
 
   date              DateTime
-  dueDate           DateTime?        @default(now())
-  status            InvoiceStatus    @default(PENDING)
+  dueDate           DateTime?       @default(now())
+  status            InvoiceStatus   @default(PENDING)
   fulfillmentStatus FulfillmentStatus @default(ORDERED)
-  type              InvoiceType      @default(SALE)
+  type              InvoiceType     @default(SALE)
 
   expenseImages ExpenseImage[]
   items         InvoiceItem[]
@@ -616,12 +639,18 @@ model StockLedger {
   id        String       @id @default(uuid())
   companyId String
   company   Company      @relation(fields: [companyId], references: [id])
+  
   itemId    String
   item      Item         @relation(fields: [itemId], references: [id])
+
+  branchId  String?                     
+  branch    Branch? @relation(fields: [branchId], references: [id])
+  
   date      DateTime     @default(now())
   type      StockTxnType
   quantity  Int
   note      String?
+  
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 }

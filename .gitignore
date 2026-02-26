@@ -20,10 +20,6 @@ build/
 coverage/
 .cache/
 
-# Prisma
-prisma/migrations/
-!prisma/migrations/.gitkeep
-
 # Editor
 .vscode/
 .idea/

@@ -189,7 +189,7 @@ model Branch {
   city         String?
   state        String?
   pincode      Int?
-  type         String?      @default("SUB")
+  type         branchType?      @default(SUB)
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
 

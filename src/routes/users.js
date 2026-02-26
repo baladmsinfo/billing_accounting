@@ -106,10 +106,7 @@ module.exports = async function (fastify, opts) {
         data: defaultAccounts.map(a => ({ ...a, companyId: company.id }))
       });
 
-      // generate password for branch admin
-      const branchPassword = generateRandomPassword();
-
-      const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
+      // generate password for bra
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -124,16 +121,16 @@ module.exports = async function (fastify, opts) {
         }
       });
 
-      const storeUser = await fastify.prisma.user.create({
-        data: {
-          email: secondaryEmail,
-          password: hashedBranchPassword,
-          name: `${company.name} Store Admin`,
-          role: "BRANCHADMIN",
-          companyId: company.id,
-          branchId: branch.id,
-        }
-      });
+      // const storeUser = await fastify.prisma.user.create({
+      //   data: {
+      //     email: secondaryEmail,
+      //     password: hashedBranchPassword,
+      //     name: `${company.name} Store Admin`,
+      //     role: "BRANCHADMIN",
+      //     companyId: company.id,
+      //     branchId: branch.id,
+      //   }
+      // });
 
       await enqueueUserRegistrationEmail({
         to: primaryEmail,
@@ -150,14 +147,14 @@ module.exports = async function (fastify, opts) {
       //   expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
       // })
 
-      await enqueueUserRegistrationEmail({
-        to: secondaryEmail,
-        name: branch.name,
-        role: "BRANCHADMIN",
-        email: secondaryEmail,
-        mobile_no: secondaryPhoneNo,
-        password: branchPassword,
-      });
+      // await enqueueUserRegistrationEmail({
+      //   to: secondaryEmail,
+      //   name: branch.name,
+      //   role: "BRANCHADMIN",
+      //   email: secondaryEmail,
+      //   mobile_no: secondaryPhoneNo,
+      //   password: branchPassword,
+      // });
 
       return reply.send({
         statusCode: "00",

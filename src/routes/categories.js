@@ -22,10 +22,10 @@ module.exports = async function (fastify, opts) {
                         where: { companyId }
                     })
 
-                    if (categoryCount >= 5) {
+                    if (categoryCount >= 100) {
                         return reply.code(201).send({
                             statusCode: '05',
-                            message: 'Trial limit reached. You can create only 5 categories. Subscribe to a plan to create more.',
+                            message: 'Trial limit reached. You can create only 100 categories. Subscribe to a plan to create more.',
                         })
                     }
                 }

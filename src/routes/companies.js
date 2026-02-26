@@ -4,12 +4,21 @@ const bcrypt = require('bcrypt');
 
 module.exports = async function (fastify, opts) {
 
+    function generateRandomPassword(length = 10) {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$&!";
+        let password = "";
+        for (let i = 0; i < length; i++) {
+            password += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return password;
+    }
+
     fastify.post(
         "/register/branch",
         { preHandler: checkRole("ADMIN") },
         async (request, reply) => {
             try {
-                const companyId = request.companyId;
+                const companyId = request.companyId || request.user.companyId;
 
                 const {
                     name: branchName,
@@ -22,12 +31,11 @@ module.exports = async function (fastify, opts) {
                     user
                 } = request.body;
 
-                const { email, password, name } = user;
+                const { email, name } = user;
 
                 console.log("Registering branch payload:", {
                     branchName,
                     email,
-                    password,
                     name,
                     addressLine1,
                     addressLine2,
@@ -55,10 +63,13 @@ module.exports = async function (fastify, opts) {
                         addressLine3,
                         city,
                         state,
-                        pincode,
+                        pincode: Number(pincode),
                         companyId
                     }
                 });
+
+                // const password = generateRandomPassword();
+                const password = "branch123";
 
                 const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -67,7 +78,7 @@ module.exports = async function (fastify, opts) {
                         email,
                         password: hashedPassword,
                         name,
-                        role: "STOREADMIN",
+                        role: "BRANCHADMIN",
                         companyId,
                         branchId: branch.id
                     },
@@ -96,7 +107,7 @@ module.exports = async function (fastify, opts) {
 
     fastify.get(
         "/branches/options",
-        { preHandler: checkRole("ADMIN") },
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
         async (req, reply) => {
             try {
                 const companyId = req.companyId;
@@ -123,7 +134,7 @@ module.exports = async function (fastify, opts) {
 
     fastify.get(
         "/branches",
-        { preHandler: checkRole("ADMIN") },
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
         async (req, reply) => {
             try {
                 const companyId = req.companyId;
@@ -167,6 +178,119 @@ module.exports = async function (fastify, opts) {
                         totalPages: Math.ceil(total / limit)
                     }
                 });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+    /** -------------------------------------------
+ * 📌 UPDATE BRANCH (Admin only)
+ * -------------------------------------------*/
+    fastify.put(
+        "/branch/:id",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.companyId;
+                const branchId = req.params.id;
+
+                const {
+                    name,
+                    addressLine1,
+                    addressLine2,
+                    addressLine3,
+                    city,
+                    state,
+                    pincode
+                } = req.body;
+
+                const branch = await fastify.prisma.branch.findFirst({
+                    where: { id: branchId, companyId }
+                });
+
+                if (!branch) {
+                    return reply.send({
+                        statusCode: "03",
+                        message: "Branch not found"
+                    });
+                }
+
+                const updated = await fastify.prisma.branch.update({
+                    where: { id: branchId },
+                    data: {
+                        name,
+                        addressLine1,
+                        addressLine2,
+                        addressLine3,
+                        city,
+                        state,
+                        pincode
+                    }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Branch updated successfully",
+                    data: updated
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+
+    fastify.delete(
+        "/branch/:id",
+        { preHandler: checkRole("ADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.companyId;
+                const branchId = req.params.id;
+
+                const branch = await fastify.prisma.branch.findFirst({
+                    where: { id: branchId, companyId }
+                });
+
+                if (!branch) {
+                    return reply.send({
+                        statusCode: "03",
+                        message: "Branch not found"
+                    });
+                }
+
+                await fastify.prisma.user.deleteMany({
+                    where: { branchId }
+                });
+
+                await fastify.prisma.branchItem.deleteMany({
+                    where: { branchId }
+                });
+
+                await fastify.prisma.stockLedger.deleteMany({
+                    where: { branchId }
+                });
+
+                await fastify.prisma.branch.delete({
+                    where: { id: branchId }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Branch deleted successfully"
+                });
+
             } catch (err) {
                 req.log.error(err);
                 return reply.send({

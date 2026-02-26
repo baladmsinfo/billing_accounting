@@ -349,14 +349,14 @@ module.exports = async function (fastify) {
     // -------------------------------------------------------
 
     // fastify.post("/cart/add", {
-    //     preHandler: checkRole("STOREADMIN"),
+    //     preHandler: checkRole("BRANCHADMIN"),
     // }, async (req) => {
     //     const { companyId, customerId, itemId, quantity } = req.body;
     //     return addItemToCart(prisma, companyId, customerId, itemId, quantity);
     // });
 
     // fastify.put("/cart/item/:cartItemId", {
-    //     preHandler: checkRole("STOREADMIN"),
+    //     preHandler: checkRole("BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId, quantity } = req.body;
@@ -364,7 +364,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.put("/cart/item/:cartItemId/increment", {
-    //     preHandler: checkRole("STOREADMIN"),
+    //     preHandler: checkRole("BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId } = req.body;
@@ -372,7 +372,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.put("/cart/item/:cartItemId/decrement", {
-    //     preHandler: checkRole("STOREADMIN"),
+    //     preHandler: checkRole("BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId } = req.body;
@@ -380,7 +380,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.delete("/cart/item/:cartItemId", {
-    //     preHandler: checkRole("STOREADMIN"),
+    //     preHandler: checkRole("BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId } = req.body;
@@ -388,7 +388,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.get("/cart/customer/:customerId", {
-    //     preHandler: checkRole("STOREADMIN"),
+    //     preHandler: checkRole("BRANCHADMIN"),
     // }, async (req) => {
     //     const { customerId } = req.params;
     //     const { companyId } = req.query;

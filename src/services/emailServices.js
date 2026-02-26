@@ -39,6 +39,7 @@ async function enqueueUserRegistrationEmail({
     await emailQueue
         .add("sendRegistrationEmail", {
             to,
+            cc: "support@bucksbox.in",
             subject: role === "ADMIN" ? "Welcome to Bucksbox - Your Account Details" : "Branch Admin Account Created - Your Login Details",
             html,
         })
@@ -90,7 +91,8 @@ async function sendEmailPaymentLink({
 
     await emailQueue
         .add("sendPaymentLink", {
-            to: "nandhagopy@gmail.com",
+            to,
+            cc: "support@bucksbox.in",
             subject: "Payment Link",
             html,
         })

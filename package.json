@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "NODE_ENV=production node src/server.js",
-    "seed": "node prisma/seedCurrency.js && node prisma/seed.js",
+    "seed": "node prisma/seed.js",
     "seedcurrency": "node prisma/seedCurrency.js",
     "studio": "npx prisma studio",
     "prisma:generate": "prisma generate",

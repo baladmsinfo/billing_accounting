@@ -78,6 +78,7 @@ module.exports = async function (fastify, opts) {
           name: `${company.name} Main Branch`,
           companyId: company.id,
           type: "MAIN",
+          main: true,
           addressLine1: company.addressLine1,
           addressLine2: company.addressLine2,
           addressLine3: company.addressLine3,
@@ -106,7 +107,10 @@ module.exports = async function (fastify, opts) {
         data: defaultAccounts.map(a => ({ ...a, companyId: company.id }))
       });
 
-      // generate password for bra
+      // generate password for branch admin
+      const branchPassword = generateRandomPassword();
+
+      const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -121,16 +125,16 @@ module.exports = async function (fastify, opts) {
         }
       });
 
-      // const storeUser = await fastify.prisma.user.create({
-      //   data: {
-      //     email: secondaryEmail,
-      //     password: hashedBranchPassword,
-      //     name: `${company.name} Store Admin`,
-      //     role: "BRANCHADMIN",
-      //     companyId: company.id,
-      //     branchId: branch.id,
-      //   }
-      // });
+      const storeUser = await fastify.prisma.user.create({
+        data: {
+          email: secondaryEmail,
+          password: hashedBranchPassword,
+          name: `${company.name} Store Admin`,
+          role: "BRANCHADMIN",
+          companyId: company.id,
+          branchId: branch.id,
+        }
+      });
 
       await enqueueUserRegistrationEmail({
         to: primaryEmail,
@@ -147,14 +151,14 @@ module.exports = async function (fastify, opts) {
       //   expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
       // })
 
-      // await enqueueUserRegistrationEmail({
-      //   to: secondaryEmail,
-      //   name: branch.name,
-      //   role: "BRANCHADMIN",
-      //   email: secondaryEmail,
-      //   mobile_no: secondaryPhoneNo,
-      //   password: branchPassword,
-      // });
+      await enqueueUserRegistrationEmail({
+        to: secondaryEmail,
+        name: branch.name,
+        role: "BRANCHADMIN",
+        email: secondaryEmail,
+        mobile_no: secondaryPhoneNo,
+        password: branchPassword,
+      });
 
       return reply.send({
         statusCode: "00",

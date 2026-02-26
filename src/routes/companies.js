@@ -1,5 +1,6 @@
 'use strict'
 const checkRole = require('../utils/checkRole');
+const { enqueueUserRegistrationEmail } = require("../services/emailServices");
 const bcrypt = require('bcrypt');
 
 module.exports = async function (fastify, opts) {
@@ -68,8 +69,7 @@ module.exports = async function (fastify, opts) {
                     }
                 });
 
-                // const password = generateRandomPassword();
-                const password = "branch123";
+                const password = generateRandomPassword();
 
                 const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -86,6 +86,15 @@ module.exports = async function (fastify, opts) {
                         company: true,
                         branch: true
                     }
+                });
+
+                await enqueueUserRegistrationEmail({
+                    to: email,
+                    name: branch.name,
+                    role: "BRANCHADMIN",
+                    email: email,
+                    mobile_no: null,
+                    password: password,
                 });
 
                 return reply.send({

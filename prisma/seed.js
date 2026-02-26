@@ -40,16 +40,16 @@ const CONFIG = {
       pincode: 600001,
       companyType: "Private Limited",
     },
-    {
-      name: "Demo Trading Pvt Ltd",
-      gstNumber: "27BBBBB0000B1Z6",
-      primaryEmail: "info@demotrading.in",
-      primaryPhoneNo: "9876501000",
-      city: "Bengaluru",
-      state: "Karnataka",
-      pincode: 560001,
-      companyType: "Private Limited",
-    },
+    // {
+    //   name: "Demo Trading Pvt Ltd",
+    //   gstNumber: "27BBBBB0000B1Z6",
+    //   primaryEmail: "info@demotrading.in",
+    //   primaryPhoneNo: "9876501000",
+    //   city: "Bengaluru",
+    //   state: "Karnataka",
+    //   pincode: 560001,
+    //   companyType: "Private Limited",
+    // },
   ],
   branchesPerCompany: 3,
   categoriesCount: 12,
@@ -151,37 +151,28 @@ async function ensureCompany(c) {
   return company;
 }
 
-async function ensureBranches(company, count) {
+async function ensureBranches(company) {
   const branches = [];
-  for (let i = 1; i <= count; i++) {
-    const name = `${company.name} Branch ${i}`;
-    let branch = await prisma.branch.findFirst({ where: { name, companyId: company.id } });
-    if (!branch) {
-      branch = await prisma.branch.create({
-        data: {
-          name,
-          addressLine1: company.addressLine1,
-          addressLine2: company.addressLine2,
-          addressLine3: company.addressLine3,
-          city: company.city,
-          state: company.state,
-          pincode: company.pincode,
-          companyId: company.id,
-        }
-      })
-    } else {
-      branch = await prisma.branch.update({
-        where: { id: branch.id },
-        data: {
-          city: company.city,
-          state: company.state,
-          pincode: company.pincode,
-          addressLine1: `Registered Office - ${company.city}`,
-        },
-      });
-    }
-    branches.push(branch);
+
+  let mainBranch = await prisma.branch.findFirst({
+    where: { companyId: company.id, main: true }
+  });
+
+  if (!mainBranch) {
+    mainBranch = await prisma.branch.create({
+      data: {
+        name: "Main Branch",
+        main: true,
+        companyId: company.id,
+        addressLine1: "Default Address",
+        city: "Chennai",
+        pincode: 600001
+      }
+    });
   }
+
+  branches.push(mainBranch);
+
   return branches;
 }
 
@@ -326,7 +317,7 @@ async function ensureProductsAndItems(company) {
 
   const sizeVariants = ["100g", "250g", "500g", "1kg", "2kg", "5kg"]
 
-  const itemsCreated = [] 
+  const itemsCreated = []
 
   for (const sub of subCategories) {
     const productCount = Math.max(5, rand(5, 8))
@@ -370,7 +361,6 @@ async function ensureProductsAndItems(company) {
               variant: size,
               price,
               MRP: mrp,
-              quantity: 0,
               productId: product.id,
               companyId: company.id
             }
@@ -414,7 +404,7 @@ async function ensureCustomersAndVendors(company) {
   return { customers, vendors };
 }
 
-async function ensureUsers(company) {
+async function ensureUsers(company, branches) {
   const passwordHash = await bcrypt.hash("bucksbox", 8);
 
   const adminEmail = `admin@${company.name.replace(/\s+/g, "").toLowerCase()}.local`;
@@ -431,30 +421,42 @@ async function ensureUsers(company) {
       },
     });
   } else {
-    await prisma.user.update({ where: { id: admin.id }, data: { status: true, companyId: company.id } });
+    admin = await prisma.user.update({
+      where: { id: admin.id },
+      data: { status: true, companyId: company.id }
+    });
   }
 
-  const staffEmail = `staff@${company.name.replace(/\s+/g, "").toLowerCase()}.local`;
-  let staff = await prisma.user.findUnique({ where: { email: staffEmail } });
-  if (!staff) {
-    staff = await prisma.user.create({
+  const branchEmail = `branch@${company.name.replace(/\s+/g, "").toLowerCase()}.local`;
+  let branchUser = await prisma.user.findUnique({ where: { email: branchEmail } });
+
+  if (!branchUser) {
+    branchUser = await prisma.user.create({
       data: {
-        email: staffEmail,
+        email: branchEmail,
         password: passwordHash,
-        name: `${company.name} Staff`,
-        role: "USER",
+        name: `${company.name} Branch Main`,
+        role: "BRANCHADMIN",
         status: true,
         companyId: company.id,
+        branchId: branches[0].id   // 🟢 FIXED
       },
     });
   } else {
-    await prisma.user.update({ where: { id: staff.id }, data: { status: true, companyId: company.id } });
+    branchUser = await prisma.user.update({
+      where: { id: branchUser.id },
+      data: {
+        status: true,
+        companyId: company.id,
+        branchId: branches[0].id
+      },
+    });
   }
 
-  return { admin, staff };
+  return { admin, branchUser };
 }
 
-async function createInvoices(company, items, customers, vendors, taxRates) {
+async function createInvoices(company, branches, items, customers, vendors, taxRates) {
   for (let i = 1; i <= CONFIG.invoicesCount; i++) {
     const isSale = i % 2 === 0
     const invoiceNumber = `INV-${company.id.slice(0, 6)}-${i}`
@@ -464,6 +466,8 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
     })
     if (exists) continue
 
+    const branch = pick(branches)   // 🟢 ADD THIS
+
     await prisma.$transaction(async (tx) => {
       let totalAmount = 0
       let totalTax = 0
@@ -472,6 +476,7 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
         data: {
           invoiceNumber,
           companyId: company.id,
+          branchId: branch.id,          // 🟢 ADDED
           type: isSale ? 'SALE' : 'PURCHASE',
           status: 'PENDING',
           date: new Date(),
@@ -516,7 +521,7 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
             price: item.price,
             total: lineTotal,
             taxRateId: taxRate?.id ?? null,
-            status: 'ORDERED'
+            status: 'ORDERED',
           }
         })
 
@@ -524,6 +529,7 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
         await tx.stockLedger.create({
           data: {
             companyId: company.id,
+            branchId: branch.id,
             itemId: item.id,
             type: isSale ? 'SALE' : 'PURCHASE',
             quantity: qty,
@@ -544,11 +550,10 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
       const description = `${isSale ? 'Invoice' : 'Purchase Invoice'} ${invoice.invoiceNumber}`
 
       // ======================================================
-      // 🧾 JOURNAL ENTRIES (SAME AS SERVICE LAYER)
+      // 🧾 JOURNAL ENTRIES (NO BRANCH NEEDED — SCHEMA HAS NONE)
       // ======================================================
 
       if (isSale) {
-        // Accounts Receivable (Debit)
         await tx.journalEntry.create({
           data: {
             companyId: company.id,
@@ -560,7 +565,6 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
           }
         })
 
-        // Sales Revenue (Credit)
         await tx.journalEntry.create({
           data: {
             companyId: company.id,
@@ -572,7 +576,6 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
           }
         })
 
-        // Tax Payable (Credit)
         if (totalTax > 0) {
           await tx.journalEntry.create({
             data: {
@@ -586,7 +589,6 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
           })
         }
       } else {
-        // Purchases (Debit)
         await tx.journalEntry.create({
           data: {
             companyId: company.id,
@@ -598,7 +600,6 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
           }
         })
 
-        // Tax Receivable (Debit)
         if (totalTax > 0) {
           await tx.journalEntry.create({
             data: {
@@ -612,7 +613,6 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
           })
         }
 
-        // Accounts Payable (Credit)
         await tx.journalEntry.create({
           data: {
             companyId: company.id,
@@ -628,39 +628,43 @@ async function createInvoices(company, items, customers, vendors, taxRates) {
   }
 }
 
-async function seedExpenses(company) {
+async function seedExpenses(company, branches) {
+  const branchId = branches?.[0]?.id ?? null;
+
   const expenseCategories = [
     'Rent',
     'Electricity',
     'Office Supplies',
     'Internet',
     'Fuel'
-  ]
+  ];
 
   const taxRates = await prisma.taxRate.findMany({
     where: { companyId: company.id }
-  })
+  });
 
   for (let i = 1; i <= 8; i++) {
-    const category = expenseCategories[i % expenseCategories.length]
-    const amount = Math.floor(Math.random() * 12000) + 800
-    const useTax = Math.random() > 0.4
+    const category = expenseCategories[i % expenseCategories.length];
+    const amount = Math.floor(Math.random() * 12000) + 800;
+    const useTax = Math.random() > 0.4;
 
     await seedCreateExpense({
       prisma,
       companyId: company.id,
+      branchId,
       category,
       date: new Date(),
       amount,
       note: `Seeded ${category} expense #${i}`,
       taxRateId: useTax ? taxRates[i % taxRates.length]?.id : null
-    })
+    });
   }
 }
 
 async function seedCreateExpense({
   prisma,
   companyId,
+  branchId = null,
   category,
   date,
   amount,
@@ -675,12 +679,11 @@ async function seedCreateExpense({
     Internet: 'Utilities Expense',
     Fuel: 'Utilities Expense',
     'Office Supplies': 'Purchases'
-  }
+  };
 
-  const expenseAccountName = expenseAccountMap[category]
-
+  const expenseAccountName = expenseAccountMap[category];
   if (!expenseAccountName) {
-    throw new Error(`No expense account mapped for category: ${category}`)
+    throw new Error(`No expense account mapped for category: ${category}`);
   }
 
   const expenseAccount = await prisma.account.findFirst({
@@ -689,7 +692,7 @@ async function seedCreateExpense({
       type: 'EXPENSE',
       name: expenseAccountName
     }
-  })
+  });
 
   const cashAccount = await prisma.account.findFirst({
     where: {
@@ -697,15 +700,15 @@ async function seedCreateExpense({
       type: 'ASSET',
       name: 'Cash'
     }
-  })
+  });
 
   if (!expenseAccount || !cashAccount) {
     throw new Error(
       `Required accounts not found (Expense: ${expenseAccountName}, Cash)`
-    )
+    );
   }
 
-  // ---------------- NO TAX ----------------
+  // ------------------------ NO TAX -------------------------
   if (!taxRateId) {
     await prisma.$transaction(async (tx) => {
       await tx.journalEntry.create({
@@ -717,7 +720,7 @@ async function seedCreateExpense({
           credit: 0,
           accountId: expenseAccount.id
         }
-      })
+      });
 
       await tx.journalEntry.create({
         data: {
@@ -728,31 +731,35 @@ async function seedCreateExpense({
           credit: amount,
           accountId: cashAccount.id
         }
-      })
-    })
-    return null
+      });
+    });
+
+    return null;
   }
 
-  // ---------------- WITH TAX ----------------
+  // ------------------------ WITH TAX -------------------------
   return prisma.$transaction(async (tx) => {
-    const tax = await tx.taxRate.findUnique({ where: { id: taxRateId } })
-    if (!tax) throw new Error('Tax rate not found')
+    const tax = await tx.taxRate.findUnique({ where: { id: taxRateId } });
+    if (!tax) throw new Error('Tax rate not found');
 
-    const taxAmount = Number(((amount * tax.rate) / 100).toFixed(2))
-    const total = Number((amount + taxAmount).toFixed(2))
+    const taxAmount = Number(((amount * tax.rate) / 100).toFixed(2));
+    const total = Number((amount + taxAmount).toFixed(2));
 
     const invoice = await tx.invoice.create({
       data: {
         companyId,
+        branchId,              // 🔥 NEW FIELD
         date,
         dueDate: date,
         type: 'EXPENSE',
         status: 'PAID',
         totalAmount: total,
         taxAmount,
+        customerId: null,
+        vendorId: null,
         invoiceNumber: `EXP-${Date.now()}`
       }
-    })
+    });
 
     await tx.invoiceTax.create({
       data: {
@@ -762,10 +769,11 @@ async function seedCreateExpense({
         invoiceType: 'EXPENSE',
         amount: taxAmount
       }
-    })
+    });
 
-    const taxPayableAccountId = await getAccountId(tx, companyId, 'Tax Payable')
-    const description = note ?? `Expense Invoice ${invoice.invoiceNumber}`
+    const taxPayableAccountId = await getAccountId(tx, companyId, 'Tax Payable');
+
+    const description = note ?? `Expense Invoice ${invoice.invoiceNumber}`;
 
     await tx.journalEntry.create({
       data: {
@@ -776,7 +784,7 @@ async function seedCreateExpense({
         credit: 0,
         accountId: expenseAccount.id
       }
-    })
+    });
 
     await tx.journalEntry.create({
       data: {
@@ -787,7 +795,7 @@ async function seedCreateExpense({
         credit: 0,
         accountId: taxPayableAccountId
       }
-    })
+    });
 
     await tx.journalEntry.create({
       data: {
@@ -798,10 +806,10 @@ async function seedCreateExpense({
         credit: total,
         accountId: cashAccount.id
       }
-    })
+    });
 
-    return invoice
-  })
+    return invoice;
+  });
 }
 
 async function main() {
@@ -810,28 +818,37 @@ async function main() {
   await ensureCurrency();
 
   for (const c of CONFIG.companies) {
+
     console.log(`\n--- Seeding company: ${c.name} ---`);
+
     const company = await ensureCompany(c);
-    await ensureBranches(company, CONFIG.branchesPerCompany);
+
+    const branches = await ensureBranches(company);   // ✅ MUST BE HERE
+    // console.log("DEBUG BRANCHES:", branches);
+
+    const { admin, branchUser } = await ensureUsers(company, branches);  // NEEDS BRANCHES
+
     await ensureAccounts(company);
+
     const taxRates = await ensureTaxRates(company);
+
     const { parents, children } = await ensureCategories(company);
+
     const items = await ensureProductsAndItems(company);
+
     const { customers, vendors } = await ensureCustomersAndVendors(company);
-    await ensureUsers(company);
-    await createInvoices(company, items, customers, vendors, taxRates);
-    await seedExpenses(company)
 
-    console.log(`--- Done company: ${c.name} ---`);
+    await createInvoices(company, branches, items, customers, vendors, taxRates);
+
+    await seedExpenses(company, branches);
+
+    console.log(`🌱 Company ${company.name} seeded successfully.`);
   }
-
-  console.log("🌱 Seed finished.");
 }
 
 main()
-  .catch((err) => {
-    console.error("SEED ERROR:", err);
-    process.exit(1);
+  .catch((e) => {
+    console.error("SEED ERROR:", e);
   })
   .finally(async () => {
     await prisma.$disconnect();

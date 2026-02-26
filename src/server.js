@@ -252,6 +252,8 @@ fastify.after(async () => {
     reply.status(status).send({ error: error.message || 'Internal Server Error' })
   })
 
+  console.log("Running")
+
   const start = async () => {
     try {
       const port = fastify.config.PORT || 8081

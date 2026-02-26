@@ -16,9 +16,6 @@ COPY prisma ./prisma
 # Generate Prisma client
 RUN npx prisma generate
 
-# Seed after code is available
-RUN npm run seedcurrency
-
 # Copy application source
 COPY . .
 
@@ -27,4 +24,4 @@ EXPOSE 3000
 
 # Run migrations at container start (NOT build time)
 #CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
-CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run seedcurrency && npm start"]

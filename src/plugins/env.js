@@ -34,6 +34,8 @@ const schema = {
     REDIS_HOST: { type: "string" },
     REDIS_PORT: { type: "string" },
     REDIS_PASSWORD: { type: "string" },
+    SUBSCRIPTION_BASE_URL: { type: "string" },
+    SUBSCRIPTION_APIKEY: { type: "string" },
     allowedOrigins: {
       type: "string",
       default: "[\"http://localhost:3000\",\"http://127.0.0.1:3000\"]"

@@ -106,10 +106,7 @@ module.exports = async function (fastify, opts) {
         data: defaultAccounts.map(a => ({ ...a, companyId: company.id }))
       });
 
-      // generate password for branch admin
-      const branchPassword = generateRandomPassword();
-
-      const hashedBranchPassword = await bcrypt.hash(branchPassword, 10);
+      // generate password for bra
 
       const hashedPassword = await bcrypt.hash(password, 10);
 

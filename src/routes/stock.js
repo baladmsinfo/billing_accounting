@@ -7,7 +7,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Stock'],
         summary: 'Record a stock entry',
@@ -48,7 +48,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Stock'],
         summary: 'Get stock ledger entries with pagination',

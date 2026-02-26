@@ -19,45 +19,38 @@ module.exports = async function (fastify) {
         }
     }
 
+    function applyBranchFilter(base, branchId) {
+        if (!branchId) return base
+        return {
+            ...base,
+            branchId
+        }
+    }
+
+    function applyBranchFilterToPayments(base, branchId) {
+        if (!branchId) return base
+        return {
+            ...base,
+            invoice: { branchId }
+        }
+    }
+
     fastify.get('/reports/dashboard/cashflow', {
-        preHandler: checkRole("ADMIN"),
-        schema: {
-            tags: ['Dashboard'],
-            summary: 'Cashflow (Inflow vs Outflow, time-based)',
-            querystring: {
-                type: 'object',
-                properties: {
-                    period: {
-                        type: 'string',
-                        enum: ['thisYear', 'thisQuarter', 'thisMonth', 'yearToDate'],
-                        default: 'thisYear',
-                    },
-                },
-            },
-        },
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req, reply) => {
-        const { period } = req.query
+        const { period, branchId } = req.query
         const { start, end } = getDateRange(period)
         const companyId = req.user.companyId
 
-        const groupBy =
-            period === 'thisMonth'
-                ? 'day'
-                : period === 'thisQuarter'
-                    ? 'week'
-                    : 'month'
-
         const payments = await fastify.prisma.payment.findMany({
-            where: {
+            where: applyBranchFilterToPayments({
                 companyId,
-                date: { gte: start, lte: end },
-            },
+                date: { gte: start, lte: end }
+            }, branchId),
             include: {
-                invoice: {
-                    select: { type: true, date: true },
-                },
+                invoice: { select: { type: true, date: true, branchId: true } }
             },
-            orderBy: { date: 'asc' },
+            orderBy: { date: 'asc' }
         })
 
         const grouped = {}
@@ -99,24 +92,11 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/reports/dashboard/profit-loss', {
-        preHandler: checkRole("ADMIN"),
-        schema: {
-            tags: ['Dashboard'],
-            summary: 'Profit and Loss timeline graph',
-            querystring: {
-                type: 'object',
-                properties: {
-                    period: {
-                        type: 'string',
-                        enum: ['thisYear', 'thisQuarter', 'thisMonth', 'yearToDate'],
-                        default: 'thisYear'
-                    }
-                }
-            }
-        }
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
+
     }, async (req, reply) => {
 
-        const { period } = req.query
+        const { period, branchId } = req.query
         const { start, end } = getDateRange(period)
         const companyId = req.user.companyId
 
@@ -125,13 +105,12 @@ module.exports = async function (fastify) {
                 : period === 'thisQuarter' ? 'week'
                     : 'month'
 
-        // 1️⃣ Fetch all invoices (Sales & Purchases)
         const invoices = await fastify.prisma.invoice.findMany({
-            where: {
+            where: applyBranchFilter({
                 companyId,
                 date: { gte: start, lte: end },
                 type: { in: ['SALE', 'PURCHASE'] }
-            },
+            }, branchId),
             orderBy: { date: 'asc' }
         })
 
@@ -176,28 +155,20 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/reports/dashboard/sales', {
-        preHandler: checkRole("ADMIN"),
-        schema: {
-            tags: ['Dashboard'],
-            summary: 'Sales invoice paid/unpaid summary',
-            querystring: {
-                type: 'object',
-                properties: {
-                    period: { type: 'string', enum: ['thisYear', 'thisQuarter', 'thisMonth', 'yearToDate'], default: 'thisYear' }
-                }
-            }
-        }
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
+
     }, async (req, reply) => {
-        const { period } = req.query
+
+        const { period, branchId } = req.query
         const { start, end } = getDateRange(period)
         const companyId = req.user.companyId
 
         const invoices = await fastify.prisma.invoice.findMany({
-            where: {
+            where: applyBranchFilter({
                 companyId,
                 type: 'SALE',
                 date: { gte: start, lte: end }
-            },
+            }, branchId),
             include: { payments: true }
         })
 
@@ -212,28 +183,20 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/reports/dashboard/purchases', {
-        preHandler: checkRole("ADMIN"),
-        schema: {
-            tags: ['Dashboard'],
-            summary: 'Purchase invoice paid/unpaid summary',
-            querystring: {
-                type: 'object',
-                properties: {
-                    period: { type: 'string', enum: ['thisYear', 'thisQuarter', 'thisMonth', 'yearToDate'], default: 'thisYear' }
-                }
-            }
-        }
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
+
     }, async (req, reply) => {
-        const { period } = req.query
+
+        const { period, branchId } = req.query
         const { start, end } = getDateRange(period)
         const companyId = req.user.companyId
 
         const invoices = await fastify.prisma.invoice.findMany({
-            where: {
+            where: applyBranchFilter({
                 companyId,
                 type: 'PURCHASE',
                 date: { gte: start, lte: end }
-            },
+            }, branchId),
             include: { payments: true }
         })
 

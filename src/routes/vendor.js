@@ -8,7 +8,7 @@ module.exports = async function (fastify, opts) {
     fastify.post(
         '/vendors',
         {
-            preHandler: checkRole("ADMIN")
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
         },
         async (request, reply) => {
             try {
@@ -31,7 +31,7 @@ module.exports = async function (fastify, opts) {
     fastify.put(
         '/vendors/:id',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Update vendor by ID',
@@ -74,7 +74,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Get all vendors (paginated)',
@@ -116,7 +116,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors/:id',
         {
-            preHandler: checkRole('ADMIN'),
+            preHandler: checkRole('ADMIN', "BRANCHADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Get vendor by ID',
@@ -190,7 +190,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors/:id/invoices',
         {
-            preHandler: checkRole('ADMIN'),
+            preHandler: checkRole('ADMIN', "BRANCHADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Get vendor invoices',
@@ -274,7 +274,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/vendors/:id',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Delete vendor by ID',
@@ -310,7 +310,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/vendors/search',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Vendors'],
                 summary: 'Search vendors with multiple filters',

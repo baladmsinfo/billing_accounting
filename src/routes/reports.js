@@ -4,7 +4,7 @@ const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify) {
     fastify.get('/ledger/:accountId', {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
         schema: {
             tags: ['Reports'],
             summary: 'Get ledger report for an account',
@@ -55,7 +55,7 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/ledger', {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
         schema: {
             tags: ['Reports'],
             summary: 'Get full ledger report (all accounts)',
@@ -130,7 +130,7 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/profit-loss', {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
         schema: {
             tags: ['Reports'],
             summary: 'Get Profit & Loss report',
@@ -222,7 +222,7 @@ module.exports = async function (fastify) {
     })
 
     fastify.get('/trial-balance', {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
         schema: {
             tags: ['Reports'],
             summary: 'Get trial balance report grouped by account type',

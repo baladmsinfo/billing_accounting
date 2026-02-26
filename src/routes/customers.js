@@ -8,7 +8,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     "/",
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     },
     async (request, reply) => {
       try {
@@ -36,7 +36,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'List customers (paginated)',
@@ -60,7 +60,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'Get customer by ID',
@@ -105,7 +105,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/:id/invoices',
     {
-      preHandler: checkRole('ADMIN'),
+      preHandler: checkRole('ADMIN', "BRANCHADMIN"),
     },
     async (request, reply) => {
       const { startDate, endDate, take } = request.query
@@ -128,7 +128,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'Update an existing customer',
@@ -181,7 +181,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Customers'],
         summary: 'Delete a customer',

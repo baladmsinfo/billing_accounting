@@ -19,7 +19,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Add Tax Rate',
@@ -51,7 +51,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Get Tax Rate',
@@ -80,7 +80,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Update Tax Rate',
@@ -124,7 +124,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Tax Rate'],
         summary: 'Delete a Tax Rate',
@@ -162,7 +162,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     "/tax",
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     },
     async (req, reply) => {
       try {

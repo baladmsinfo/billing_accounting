@@ -25,7 +25,7 @@ module.exports = async function (fastify, opts) {
   fastify.post(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'Create a new item',
@@ -90,7 +90,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'List items with pagination',
@@ -135,7 +135,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'Update an existing item',
@@ -218,7 +218,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Items'],
         summary: 'Delete an item',

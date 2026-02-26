@@ -7,7 +7,7 @@ module.exports = async function (fastify, opts) {
   // Create product
   fastify.post(
     '/',
-    { preHandler: checkRole("ADMIN") },
+    { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
     async (request, reply) => {
       try {
         const data = { ...request.body, companyId: request.user.companyId };
@@ -109,7 +109,7 @@ module.exports = async function (fastify, opts) {
   );
 
   fastify.post("/upload/product-image", {
-    preHandler: checkRole("ADMIN"),
+    preHandler: checkRole("ADMIN", "BRANCHADMIN"),
   }, async (req, reply) => {
 
     if (!req.isMultipart()) {
@@ -247,7 +247,7 @@ module.exports = async function (fastify, opts) {
   // fastify.get(
   //   '/',
   //   {
-  //     preHandler: checkRole("ADMIN"),
+  //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
   //     schema: {
   //       tags: ['Product'],
   //       description: 'List products with pagination',
@@ -296,7 +296,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/category/subcategory',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Category'],
         description: 'Fetch all categories and subcategories for the current company'
@@ -334,7 +334,7 @@ module.exports = async function (fastify, opts) {
   fastify.get(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Get product by ID including items',
@@ -383,7 +383,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Update product and items (add/update items and stock)',
@@ -527,11 +527,11 @@ module.exports = async function (fastify, opts) {
   // Add item to product
   fastify.post(
     '/:productId/items',
-    { preHandler: checkRole("ADMIN") },
+    { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
     async (request, reply) => {
       try {
         const { productId } = request.params;
-        const { variant, price, taxrate, branchId, MRP } = request.body;
+        const { variant, price, taxrate, branchId = null, MRP } = request.body;
         const companyId = request.user.companyId;
 
         // Validate product
@@ -612,7 +612,7 @@ module.exports = async function (fastify, opts) {
   fastify.put(
     '/item/:itemId/price',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     },
     async (request, reply) => {
       try {
@@ -659,7 +659,7 @@ module.exports = async function (fastify, opts) {
   fastify.delete(
     '/:id',
     {
-      preHandler: checkRole("ADMIN"),
+      preHandler: checkRole("ADMIN", "BRANCHADMIN"),
       schema: {
         tags: ['Product'],
         description: 'Delete a product by ID',

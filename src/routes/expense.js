@@ -27,7 +27,7 @@ module.exports = async function (fastify, opts) {
 
     fastify.post(
         '/',
-        { preHandler: checkRole("ADMIN") },
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
         async (request, reply) => {
             try {
                 const {
@@ -36,11 +36,28 @@ module.exports = async function (fastify, opts) {
                     amount,
                     note,
                     taxRateId,
+                    branchId,
                     imageId,
                     imageUrl
                 } = request.body
 
-                const companyId = request.user.companyId
+                const companyId = request.user.companyId || request.companyId
+
+                let branch = null;
+
+                if (branchId) {
+                    branch = await fastify.prisma.branch.findFirst({
+                        where: { id: branchId, companyId }
+                    });
+
+                } else {
+                    branch = await fastify.prisma.branch.findFirst({
+                        where: { companyId, type: "MAIN" }
+                    });
+                }
+
+                console.log("Branch", branch);
+
 
                 const expenseAccount = await fastify.prisma.account.findFirst({
                     where: { companyId, type: 'EXPENSE', name: { contains: category, mode: 'insensitive' } }
@@ -60,6 +77,7 @@ module.exports = async function (fastify, opts) {
                         const inv = await tx.invoice.create({
                             data: {
                                 companyId,
+                                branchId: branch.id,
                                 date: new Date(date),
                                 dueDate: new Date(date),
                                 type: 'EXPENSE',
@@ -124,6 +142,7 @@ module.exports = async function (fastify, opts) {
                     const inv = await tx.invoice.create({
                         data: {
                             companyId,
+                            branchId: branch.id,
                             date: new Date(date),
                             dueDate: new Date(date),
                             type: 'EXPENSE',
@@ -216,91 +235,94 @@ module.exports = async function (fastify, opts) {
     )
 
     fastify.get('/chart', {
-        preHandler: checkRole("ADMIN"),
-        schema: {
-            tags: ['Expense'],
-            summary: 'Get expense summary for chart with period',
-            querystring: {
-                type: 'object',
-                properties: {
-                    period: { type: 'string' }
-                }
-            }
-        }
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (request, reply) => {
         try {
             const companyId = request.user.companyId;
-            const { period = "thisYear" } = request.query;
+            const { period = "thisYear", branchId } = request.query;
 
             const { from, to } = getDateRange(period);
 
+            // Fetch all EXPENSE accounts (to map category names)
             const expenseAccounts = await fastify.prisma.account.findMany({
                 where: { companyId, type: 'EXPENSE' }
             });
 
-            const accountIds = expenseAccounts.map(a => a.id);
-
-            const grouped = await fastify.prisma.journalEntry.groupBy({
-                by: ['accountId'],
+            // Fetch all expense invoices filtered by branch and period
+            const invoices = await fastify.prisma.invoice.findMany({
                 where: {
                     companyId,
-                    accountId: { in: accountIds },
-                    debit: { gt: 0 },
-                    date: {
-                        gte: from,
-                        lte: to
-                    }
+                    type: "EXPENSE",
+                    date: { gte: from, lte: to },
+                    ...(branchId ? { branchId } : {})  // branch filter only if provided
                 },
-                _sum: { debit: true }
-            })
+                select: {
+                    totalAmount: true,
+                    invoiceNumber: true,
+                    date: true,
+                    // Get category from the account relation (by name match)
+                    expenseImages: false
+                }
+            });
 
-            const chartData = grouped.map(g => ({
-                category: expenseAccounts.find(a => a.id === g.accountId)?.name || "Unknown",
-                total: g._sum.debit || 0
-            }))
+            // Build chart categories from expense accounts
+            const categories = expenseAccounts.map(a => a.name.toLowerCase());
 
-            const grandTotal = chartData.reduce((sum, x) => sum + x.total, 0)
+            // Prepare grouped totals
+            const grouped = [];
+
+            for (const acc of expenseAccounts) {
+                // Match invoices that contain this account category
+                // Category name is stored in "category" input used during creation
+                const total = (await fastify.prisma.journalEntry.aggregate({
+                    where: {
+                        companyId,
+                        accountId: acc.id,
+                        debit: { gt: 0 },
+                        date: { gte: from, lte: to },
+                    },
+                    _sum: { debit: true }
+                }))._sum.debit || 0;
+
+                grouped.push({
+                    category: acc.name,
+                    total
+                });
+            }
+
+            const grandTotal = grouped.reduce((s, x) => s + x.total, 0);
 
             return reply.send({
                 statusCode: "00",
-                message: "Expense chart filtered by period",
-                data: { items: chartData, total: grandTotal }
-            })
+                message: `Expense chart for ${period}`,
+                data: { items: grouped, total: grandTotal }
+            });
+
         } catch (err) {
-            console.error(err)
-            reply.code(500).send({ statusCode: "99", message: err.message })
+            console.error(err);
+            return reply.code(500).send({
+                statusCode: "99",
+                message: err.message
+            });
         }
-    })
+    });
 
     fastify.get(
         '/',
         {
-            preHandler: checkRole('ADMIN'),
-            schema: {
-                tags: ['Expense'],
-                summary: 'Get expenses (invoice-based, category-aware)',
-                querystring: {
-                    type: 'object',
-                    properties: {
-                        page: { type: 'number', default: 1 },
-                        take: { type: 'number', default: 10 },
-                        category: { type: 'string', nullable: true },
-                        fromDate: { type: 'string', format: 'date', nullable: true },
-                        toDate: { type: 'string', format: 'date', nullable: true }
-                    }
-                }
-            }
+            preHandler: checkRole('ADMIN', "BRANCHADMIN"),
         },
         async (request, reply) => {
             try {
-                const { page = 1, take = 10, category, fromDate, toDate } = request.query
-                const skip = (page - 1) * take
+                const { page = 1, take = 10, category, fromDate, toDate, branchId } = request.query
+                const skip = (page - 1) * Number(take)
                 const companyId = request.user.companyId
 
-                // 1️⃣ Get EXPENSE invoices
+                // Base expense invoice filter
                 const invoiceWhere = {
                     companyId,
                     type: 'EXPENSE',
+                    ...(branchId ? { branchId } : {}),   
                     ...(fromDate && { date: { gte: new Date(fromDate) } }),
                     ...(toDate && { date: { lte: new Date(toDate) } })
                 }
@@ -308,7 +330,7 @@ module.exports = async function (fastify, opts) {
                 const invoices = await fastify.prisma.invoice.findMany({
                     where: invoiceWhere,
                     skip,
-                    take,
+                    take: Number(take),
                     orderBy: { date: 'desc' },
                     include: {
                         expenseImages: {
@@ -319,7 +341,7 @@ module.exports = async function (fastify, opts) {
 
                 const invoiceIds = invoices.map(i => i.id)
 
-                // 2️⃣ Fetch related EXPENSE journal entries
+                // Fetch only journal entries related to these invoices
                 const journals = await fastify.prisma.journalEntry.findMany({
                     where: {
                         companyId,
@@ -334,18 +356,18 @@ module.exports = async function (fastify, opts) {
                     include: { account: true }
                 })
 
-                // 3️⃣ Map invoiceNumber → journal entry
+                // Link journal entry → invoice
                 const journalByInvoice = {}
                 journals.forEach(j => {
-                    const match = invoices.find(inv =>
+                    const matchedInvoice = invoices.find(inv =>
                         j.description?.includes(inv.invoiceNumber)
                     )
-                    if (match) {
-                        journalByInvoice[match.id] = j
+                    if (matchedInvoice) {
+                        journalByInvoice[matchedInvoice.id] = j
                     }
                 })
 
-                // 4️⃣ Shape response (UI-friendly)
+                // Shape response
                 const data = invoices
                     .filter(inv => !category || journalByInvoice[inv.id])
                     .map(inv => {
@@ -384,7 +406,7 @@ module.exports = async function (fastify, opts) {
     fastify.get(
         '/options',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Get all expense account options (excluding Purchases)',
@@ -453,7 +475,7 @@ module.exports = async function (fastify, opts) {
     fastify.put(
         '/:id',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Update an expense',
@@ -522,7 +544,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/:id',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Expense'],
                 summary: 'Delete an expense',

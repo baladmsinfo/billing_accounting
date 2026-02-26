@@ -33,7 +33,6 @@ fastify.ready((err) => {
   console.log("Config loaded:", fastify.config);
 });
 
-
 fastify.after(async () => {
 
   const multipart = require("@fastify/multipart");
@@ -43,7 +42,6 @@ fastify.after(async () => {
       fileSize: 5 * 1024 * 1024, // 5 MB
     },
   });
-
 
   const rateLimit = require('@fastify/rate-limit')
   fastify.register(rateLimit, {
@@ -192,6 +190,8 @@ fastify.after(async () => {
 
           if (req.role === "ADMIN") {
             req.companyId = decoded.companyId;
+          } else if (req.role === "BRANCHADMIN") {
+            
           }
 
           req.log.info(

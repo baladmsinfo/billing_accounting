@@ -3,7 +3,7 @@ const checkRole = require('../utils/checkRole')
 
 async function uploadRoute(fastify) {
   fastify.post("/upload", {
-    preHandler: checkRole("ADMIN"),
+    preHandler: checkRole("ADMIN", "BRANCHADMIN"),
   }, async (req, reply) => {
     if (!req.isMultipart()) {
       return reply.code(415).send({ error: "Unsupported Media Type" });

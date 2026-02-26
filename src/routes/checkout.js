@@ -7,7 +7,7 @@ module.exports = async function (fastify, opts) {
     fastify.post(
         '/:customerId/cart/items',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Add an item to a customer\'s active cart',
@@ -57,7 +57,7 @@ module.exports = async function (fastify, opts) {
         fastify.get(
         '/:customerId/carts',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Get all carts of a customer (with items)',
@@ -101,7 +101,7 @@ module.exports = async function (fastify, opts) {
     fastify.patch(
         '/:customerId/cart/items/:cartItemId/increment',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Increment quantity of a cart item by 1',
@@ -154,7 +154,7 @@ module.exports = async function (fastify, opts) {
     fastify.patch(
         '/:customerId/cart/items/:cartItemId/decrement',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Decrement quantity of a cart item by 1 (auto-delete if reaches 0)',
@@ -214,7 +214,7 @@ module.exports = async function (fastify, opts) {
     fastify.patch(
         '/:customerId/cart/items/:cartItemId',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Update quantity of an item in customer\'s cart',
@@ -276,7 +276,7 @@ module.exports = async function (fastify, opts) {
     fastify.delete(
         '/:customerId/cart/items/:cartItemId',
         {
-            preHandler: checkRole("ADMIN"),
+            preHandler: checkRole("ADMIN", "BRANCHADMIN"),
             schema: {
                 tags: ['Cart'],
                 summary: 'Delete an item from customer\'s cart',

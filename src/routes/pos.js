@@ -17,7 +17,7 @@ module.exports = async function (fastify) {
     const prisma = fastify.prisma;
 
     fastify.get("/products", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req, reply) => {
         try {
             const page = Number(req.query.page || 1)
@@ -48,7 +48,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.get("/product/:id", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         return prisma.product.findUnique({
             where: { id: req.params.id },
@@ -58,7 +58,7 @@ module.exports = async function (fastify) {
 
 
     fastify.get("/categories", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (request, reply) => {
         try {
             const page = Number(request.query.page || 1)
@@ -88,7 +88,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.post("/customer/create", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { companyId, name, email, phone } = req.body;
         return prisma.customer.create({
@@ -97,7 +97,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.get("/customer/search", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { companyId, q } = req.query;
         return prisma.customer.findMany({
@@ -114,14 +114,14 @@ module.exports = async function (fastify) {
 
 
     // fastify.post("/cart/add", {
-    //     preHandler: checkRole("ADMIN"),
+    //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     // }, async (req) => {
     //     const { companyId, customerId, itemId, quantity } = req.body;
     //     return addItemToCart(prisma, companyId, customerId, itemId, quantity);
     // });
 
     // fastify.put("/cart/item/:cartItemId", {
-    //     preHandler: checkRole("ADMIN"),
+    //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId, quantity } = req.body;
@@ -129,7 +129,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.put("/cart/item/:cartItemId/increment", {
-    //     preHandler: checkRole("ADMIN"),
+    //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId } = req.body;
@@ -137,7 +137,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.put("/cart/item/:cartItemId/decrement", {
-    //     preHandler: checkRole("ADMIN"),
+    //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId } = req.body;
@@ -145,7 +145,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.delete("/cart/item/:cartItemId", {
-    //     preHandler: checkRole("ADMIN"),
+    //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     // }, async (req) => {
     //     const { cartItemId } = req.params;
     //     const { companyId, customerId } = req.body;
@@ -153,7 +153,7 @@ module.exports = async function (fastify) {
     // });
 
     // fastify.get("/cart/customer/:customerId", {
-    //     preHandler: checkRole("ADMIN"),
+    //     preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     // }, async (req) => {
     //     const { customerId } = req.params;
     //     const { companyId } = req.query;
@@ -163,7 +163,7 @@ module.exports = async function (fastify) {
     // cart func
 
     fastify.post("/cart/initalize", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const cart = await prisma.cart.create({
             data: {
@@ -181,7 +181,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.post("/cart/add", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartId, itemId, productId } = req.body;
 
@@ -246,7 +246,7 @@ module.exports = async function (fastify) {
 
     // Fetch full cart with items
     fastify.get("/cart/:cartId", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartId } = req.params;
 
@@ -277,10 +277,10 @@ module.exports = async function (fastify) {
     });
 
     fastify.get("/cart/drafts", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         try {
-            const { companyId } = req.user; 
+            const { companyId } = req.user;
 
             const draftCarts = await prisma.cart.findMany({
                 where: {
@@ -314,7 +314,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.post("/cart/save-draft", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartId } = req.body;
 
@@ -352,7 +352,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.post("/cart/discard-cart", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartId } = req.body;
 
@@ -388,7 +388,7 @@ module.exports = async function (fastify) {
 
     // Increment quantity
     fastify.put("/cart/item/:cartItemId/increment", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartItemId } = req.params;
 
@@ -406,7 +406,7 @@ module.exports = async function (fastify) {
 
     // Decrement quantity
     fastify.put("/cart/item/:cartItemId/decrement", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartItemId } = req.params;
 
@@ -427,7 +427,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.delete("/cart/item/:cartItemId", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartItemId } = req.params;
 
@@ -466,7 +466,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.post("/cart/:cartId/finish", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { cartId } = req.params;
 
@@ -490,15 +490,30 @@ module.exports = async function (fastify) {
 
     fastify.post(
         "/checkout",
-        { preHandler: checkRole("ADMIN") },
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
         async (req, reply) => {
             const {
                 cartId,
                 paymentMethod,
-                customer
+                customer,
+                branchId
             } = req.body;
 
-            const companyId = req.companyId;
+            const companyId = req.companyId || req.user.companyId;
+
+            let branch = null;
+
+            if (branchId) {
+                branch = await prisma.branch.findFirst({
+                    where: { id: branchId, companyId }
+                });
+
+            } else {
+                branch = await prisma.branch.findFirst({
+                    where: { companyId , type: "MAIN" }
+                });
+            }
+
 
             return await fastify.prisma.$transaction(async (tx) => {
                 //  CART VALIDATION 
@@ -556,6 +571,7 @@ module.exports = async function (fastify) {
                     data: {
                         companyId,
                         customerId,
+                        branchId: branch.id,
                         date: new Date(),
                         status: paymentMethod === "cash" ? "PAID" : "PENDING",
                         type: "POS",
@@ -697,7 +713,7 @@ module.exports = async function (fastify) {
     );
 
     fastify.post("/pos/quick-sale", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         const { companyId, branchId, customerId, items, paymentMethod } = req.body;
 
@@ -768,7 +784,7 @@ module.exports = async function (fastify) {
     });
 
     fastify.get("/invoice/:id", {
-        preHandler: checkRole("ADMIN"),
+        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
     }, async (req) => {
         return prisma.invoice.findUnique({
             where: { id: req.params.id },

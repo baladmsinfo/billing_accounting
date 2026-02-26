@@ -14,7 +14,6 @@ RUN npm ci --omit=dev
 COPY prisma ./prisma
 
 # Generate Prisma client
-RUN npx prisma migrate reset
 RUN npx prisma migrate deploy
 RUN npx prisma generate
 

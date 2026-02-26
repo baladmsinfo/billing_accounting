@@ -17,6 +17,9 @@ COPY prisma ./prisma
 RUN npx prisma migrate deploy
 RUN npx prisma generate
 
+# Seed after code is available
+RUN npm run seedcurrency
+
 # Copy application source
 COPY . .
 

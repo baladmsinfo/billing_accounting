@@ -24,4 +24,4 @@ EXPOSE 3000
 
 # Run migrations at container start (NOT build time)
 #CMD ["sh", "-c", "npx prisma migrate deploy && npm run seed && npm start"]
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run seedcurrency && npm start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

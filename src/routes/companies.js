@@ -311,6 +311,212 @@ module.exports = async function (fastify, opts) {
         }
     );
 
+    /* =======================================================
+   👤 CREATE USER UNDER A BRANCH (ONLY BRANCHADMIN ROLE)
+   ======================================================= */
+    fastify.post(
+        "/branch/:branchId/users",
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
+        async (request, reply) => {
+            try {
+                const companyId = request.companyId || request.user.companyId;
+                const branchId = request.params.branchId;
+
+                const { name, email } = request.body;
+
+                const password = generateRandomPassword();
+
+                // ❗ Only BRANCHADMIN creation allowed
+                const role = "BRANCHADMIN";
+
+                // Check branch belongs to same company
+                const branch = await fastify.prisma.branch.findFirst({
+                    where: { id: branchId, companyId }
+                });
+
+                if (!branch) {
+                    return reply.send({
+                        statusCode: "03",
+                        message: "Branch not found"
+                    });
+                }
+
+                // Check existing email
+                const existingUser = await fastify.prisma.user.findUnique({
+                    where: { email }
+                });
+                if (existingUser) {
+                    return reply.send({
+                        statusCode: "02",
+                        message: "Email already exists"
+                    });
+                }
+
+                // Hash password
+                const hashed = await bcrypt.hash(password, 10);
+
+                const user = await fastify.prisma.user.create({
+                    data: {
+                        name,
+                        email,
+                        password: hashed,
+                        role,
+                        companyId,
+                        branchId
+                    }
+                });
+
+                await enqueueUserRegistrationEmail({
+                    to: user.email,
+                    name: branch.name,
+                    role: "BRANCHADMIN",
+                    email: user.email,
+                    mobile_no: null,
+                    password: password,
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Branch user created successfully",
+                    data: user
+                });
+
+            } catch (err) {
+                request.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+
+    /* =======================================================
+       🗑 DELETE A BRANCH USER (ONLY BRANCHADMIN USERS)
+       ======================================================= */
+    fastify.delete(
+        "/branch/:branchId/users/:userId",
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
+        async (request, reply) => {
+            try {
+                const companyId = request.companyId || request.user.companyId;
+                const { branchId, userId } = request.params;
+
+                // Fetch user
+                const user = await fastify.prisma.user.findFirst({
+                    where: { id: userId, companyId, branchId }
+                });
+
+                if (!user) {
+                    return reply.send({
+                        statusCode: "03",
+                        message: "User not found"
+                    });
+                }
+
+                // ❌ Do not allow deleting ADMIN or SUPERADMIN
+                if (user.role === "ADMIN" || user.role === "SUPERADMIN") {
+                    return reply.send({
+                        statusCode: "04",
+                        message: "Not allowed to delete this user type"
+                    });
+                }
+
+                await fastify.prisma.user.delete({
+                    where: { id: userId }
+                });
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "User deleted successfully"
+                });
+
+            } catch (err) {
+                request.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
+    fastify.get(
+        "/branches-with-users",
+        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
+        async (req, reply) => {
+            try {
+                const companyId = req.user.companyId;
+
+                let {
+                    page = 1,
+                    limit = 10,
+                    search = ""
+                } = req.query;
+
+                // ✅ FIX: ensure integers
+                page = Number(page);
+                limit = Number(limit);
+
+                const skip = (page - 1) * limit;
+
+                const where = {
+                    companyId,
+                    OR: search
+                        ? [
+                            { name: { contains: search, mode: "insensitive" } },
+                            { city: { contains: search, mode: "insensitive" } },
+                            { state: { contains: search, mode: "insensitive" } }
+                        ]
+                        : undefined
+                };
+
+                const [branches, total] = await Promise.all([
+                    fastify.prisma.branch.findMany({
+                        where,
+                        include: {
+                            users: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    role: true,
+                                    createdAt: true
+                                }
+                            }
+                        },
+                        skip,
+                        take: limit,
+                        orderBy: { createdAt: "desc" }
+                    }),
+
+                    fastify.prisma.branch.count({ where })
+                ]);
+
+                return reply.send({
+                    statusCode: "00",
+                    message: "Branches with users fetched successfully",
+                    data: branches,
+                    meta: {
+                        page,
+                        limit,
+                        total
+                    }
+                });
+            } catch (err) {
+                req.log.error(err);
+                return reply.send({
+                    statusCode: "99",
+                    message: "Internal server error",
+                    error: err.message
+                });
+            }
+        }
+    );
+
     // BANNERS: GET ALL UNDER COMPANY
     fastify.get(
         "/banners",

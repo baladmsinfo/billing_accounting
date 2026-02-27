@@ -387,7 +387,8 @@ module.exports = async function (fastify, opts) {
           email: user.email,
           role: user.role,
           companyId: user.companyId,
-          company: user.company
+          company: user.company,
+          branchId: user.branchId || null,
         },
       })
     } catch (err) {

@@ -220,6 +220,7 @@ fastify.after(async () => {
   fastify.register(require('./routes/account'), { prefix: '/api/account' })
   fastify.register(require('./routes/expense'), { prefix: '/api/expenses' })
   fastify.register(require('./routes/companies'), { prefix: '/api/company' })
+  fastify.register(require('./routes/offline'), { prefix: '/api/offline' })
   fastify.register(require("./routes/subscription"));
   fastify.register(require('./routes/categories'), { prefix: '/api/categories' })
   fastify.register(require('./routes/products'), { prefix: '/api/products' })

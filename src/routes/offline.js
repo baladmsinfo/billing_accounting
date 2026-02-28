@@ -182,7 +182,7 @@ module.exports = async function (fastify, opts) {
 
             // Currency check
             const currency = await fastify.prisma.currency.findUnique({
-                where: { id: "7d0f3780-6154-4b45-8d72-cdd6d1ff6348" }
+                where: { id: currencyId }
             });
 
             if (!currency) {
@@ -205,7 +205,7 @@ module.exports = async function (fastify, opts) {
                     state,
                     pincode: Number(pincode),
                     companyType,
-                    currencyId : "7d0f3780-6154-4b45-8d72-cdd6d1ff6348",
+                    currencyId,
                     tenant,
                 }
             });

@@ -26,7 +26,7 @@ module.exports = async function (fastify, opts) {
         company: companyData
       } = request.body;
 
-      const { primaryEmail, primaryPhoneNo } = companyData;
+      const { primaryEmail, primaryPhoneNo, secondaryPhoneNo, secondaryEmail } = companyData;
 
       const existingEmail = await fastify.prisma.user.findMany({
         where: { email: { in: [primaryEmail] } }

@@ -365,7 +365,7 @@ module.exports = async function (fastify, opts) {
     try {
       const { email, password } = request.body
       const user = await userService.findByEmail(fastify.prisma, email)
-      if (!user) return reply.code(401).send({ statusCode: 401, message: 'Invalid credentials' })
+      if (!user) return reply.code(401).send({ statusCode: 401, message: 'Email not Existed' })
 
       const ok = await comparePassword(password, user.password)
       if (!ok) return reply.code(401).send({ statusCode: 401, message: 'Invalid credentials' })

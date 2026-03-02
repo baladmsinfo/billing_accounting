@@ -14,9 +14,6 @@ module.exports = async function (fastify, opts) {
         return password;
     }
 
-    // ===========================================
-    // OFFLINE LOGIN
-    // ===========================================
     fastify.post("/login", async (request, reply) => {
         try {
             const { email, password } = request.body;
@@ -28,11 +25,10 @@ module.exports = async function (fastify, opts) {
                 });
             }
 
-            // 1️⃣ Find user
             const user = await fastify.prisma.user.findUnique({
                 where: { email },
                 include: {
-                    company: true,
+                    company: { include: { currency: true } },
                     branch: true
                 }
             });
@@ -44,7 +40,6 @@ module.exports = async function (fastify, opts) {
                 });
             }
 
-            // 2️⃣ Check password
             const validPassword = await bcrypt.compare(password, user.password);
             if (!validPassword) {
                 return reply.send({
@@ -53,69 +48,37 @@ module.exports = async function (fastify, opts) {
                 });
             }
 
-            // 3️⃣ Issue token (for offline sync)
+            // Issue Offline JWT
             const token = fastify.jwt.sign({
                 id: user.id,
                 role: user.role,
                 companyId: user.companyId,
-                branchId: user.branchId || null,
+                branchId: user.branchId ?? null,
             });
 
-            // ===========================================
-            // 4️⃣ ROLE-BASED OFFLINE RESPONSE
-            // ===========================================
-
-            let offlineData = {
+            return reply.send({
+                statusCode: "00",
+                message: "login successful",
+                token,
                 user: {
                     id: user.id,
                     name: user.name,
                     email: user.email,
                     role: user.role,
-                }
-            };
-
-            // ADMIN → Return company details
-            if (user.role === "ADMIN" || user.role === "SUPERADMIN") {
-                offlineData.company = {
+                },
+                company: {
                     id: user.company.id,
                     name: user.company.name,
                     email: user.company.primaryEmail,
                     phone: user.company.primaryPhoneNo,
                     address: user.company.addressLine1,
-                    currency: user.company.currencyId,
-                    license: {
-                        key: user.company.license?.licenseKey || "OFFLINE-LICENSE",
-                        expiry: user.company.license?.expiresAt || null
-                    }
-                };
-            }
-
-            // BRANCH ADMIN → Return company + branch details
-            if (user.role === "BRANCHADMIN") {
-                offlineData.company = {
-                    id: user.company.id,
-                    name: user.company.name,
-                    email: user.company.primaryEmail,
-                    phone: user.company.primaryPhoneNo,
-                    address: user.company.addressLine1,
-                };
-
-                offlineData.branch = {
+                    currency: user.company.currency
+                },
+                branch: user.branch ? {
                     id: user.branch.id,
                     name: user.branch.name,
-                    address: user.branch.addressLine1,
-                    city: user.branch.city,
-                    pincode: user.branch.pincode,
-                };
-            }
-
-            // USER → Return only user details (already set above)
-
-            return reply.code(200).send({
-                statusCode: "00",
-                message: "login successful",
-                token,
-                ...offlineData
+                    address: user.branch.addressLine1
+                } : null
             });
 
         } catch (err) {
@@ -123,6 +86,226 @@ module.exports = async function (fastify, opts) {
             return reply.send({
                 statusCode: "99",
                 message: "Login error",
+                error: err.message
+            });
+        }
+    });
+
+    fastify.get("/company-sync", async (req, reply) => {
+        try {
+            const { companyId } = req.user;
+
+            const company = await fastify.prisma.company.findUnique({
+                where: { id: companyId },
+                include: {
+                    currency: true,
+                    taxRates: true,
+                    categories: true
+                }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                company
+            });
+
+        } catch (err) {
+            console.error("company-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch company data",
+                error: err.message
+            });
+        }
+    });
+
+    fastify.get("/branch-sync", async (req, reply) => {
+        try {
+            const { branchId } = req.user;
+
+            if (!branchId) {
+                return reply.send({
+                    statusCode: "01",
+                    message: "Admin has no branch. Skip."
+                });
+            }
+
+            const branch = await fastify.prisma.branch.findUnique({
+                where: { id: branchId },
+                include: {
+                    users: true
+                }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                branch
+            });
+
+        } catch (err) {
+            console.error("branch-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch branch data",
+                error: err.message
+            });
+        }
+    });
+
+    // ===========================================
+    //  NEW: /tax-sync  (Option 2 Selected)
+    // ===========================================
+    fastify.get("/tax-sync", async (req, reply) => {
+        try {
+            const { companyId } = req.user;
+
+            const taxRates = await fastify.prisma.taxRate.findMany({
+                where: { companyId },
+                orderBy: { name: "asc" }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                tax_rates: taxRates
+            });
+
+        } catch (err) {
+            console.error("tax-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch tax rates",
+                error: err.message
+            });
+        }
+    });
+
+    fastify.get("/products-sync", async (req, reply) => {
+        try {
+            const { companyId, branchId } = req.user;
+
+            const categories = await fastify.prisma.category.findMany({
+                where: { companyId }
+            });
+
+            const products = await fastify.prisma.product.findMany({
+                where: { companyId },
+                include: {
+                    items: true,
+                    category: true,
+                    subCategory: true
+                }
+            });
+
+            const branchItems = await fastify.prisma.branchItem.findMany({
+                where: { branchId },
+                include: {
+                    item: {
+                        include: {
+                            product: true
+                        }
+                    }
+                }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                categories,
+                products,
+                branchItems
+            });
+
+        } catch (err) {
+            console.error("products-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch products",
+                error: err.message
+            });
+        }
+    });
+
+    fastify.get("/parties-sync", async (req, reply) => {
+        try {
+            const { companyId } = req.user;
+
+            const parties = await fastify.prisma.party.findMany({
+                where: { companyId },
+                include: { addresses: true }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                parties
+            });
+
+        } catch (err) {
+            console.error("parties-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch parties",
+                error: err.message
+            });
+        }
+    });
+
+    fastify.get("/invoices-sync", async (req, reply) => {
+        try {
+            const { branchId, companyId, role } = req.user;
+
+            const filter = (role === "ADMIN" || role === "SUPERADMIN")
+                ? { companyId }
+                : { branchId };
+
+            const invoices = await fastify.prisma.invoice.findMany({
+                where: filter,
+                include: {
+                    items: {
+                        include: {
+                            product: true,
+                            item: true
+                        }
+                    },
+                    taxes: true,
+                    party: true
+                }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                invoices
+            });
+
+        } catch (err) {
+            console.error("invoices-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch invoices",
+                error: err.message
+            });
+        }
+    });
+
+    fastify.get("/payments-sync", async (req, reply) => {
+        try {
+            const { companyId } = req.user;
+
+            const payments = await fastify.prisma.payment.findMany({
+                where: { companyId },
+                include: {
+                    invoice: true
+                }
+            });
+
+            return reply.send({
+                statusCode: "00",
+                payments
+            });
+
+        } catch (err) {
+            console.error("payments-sync error:", err);
+            return reply.send({
+                statusCode: "99",
+                message: "Failed to fetch payments",
                 error: err.message
             });
         }

@@ -7,6 +7,7 @@
     "start": "NODE_ENV=production node src/server.js",
     "seed": "node prisma/seed.js",
     "seedcurrency": "node prisma/seedCurrency.js",
+    "seedration": "node prisma/seedRation.js",
     "studio": "npx prisma studio",
     "prisma:generate": "prisma generate",
     "migrate:dev": "prisma migrate dev && prisma generate",

@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 // ✅ UPDATE THIS WITH YOUR ACTUAL COMPANY ID
-const COMPANY_ID = "4b200937-dc5f-4312-866b-a2ecdb02cd33";
+const COMPANY_ID = "1e1e7840-c90b-42e3-8e07-4632499f2678";
 
 async function main() {
   console.log("🌱 Starting ration shop seed...");

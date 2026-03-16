@@ -232,7 +232,7 @@ fastify.get("/products", {
     }, async (req) => {
         const cart = await prisma.cart.create({
             data: {
-                companyId: req.companyId,
+                companyId: req.companyId || req.user.companyId,
                 status: "PENDING",
             },
             include: {

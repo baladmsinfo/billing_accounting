@@ -187,11 +187,10 @@ fastify.after(async () => {
           console.log(decoded);
           req.user = decoded;
           req.role = decoded.role;
+          req.companyId = decoded.companyId;
 
-          if (req.role === "ADMIN") {
-            req.companyId = decoded.companyId;
-          } else if (req.role === "BRANCHADMIN") {
-            
+          if (req.role === "BRANCHADMIN") {
+            req.branchId = decoded.branchId;
           }
 
           req.log.info(

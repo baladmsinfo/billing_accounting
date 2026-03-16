@@ -69,7 +69,8 @@ module.exports = async function (fastify, opts) {
                     }
                 });
 
-                const password = generateRandomPassword();
+                // const password = generateRandomPassword();
+                const password = "bucksbox";
 
                 const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -324,7 +325,8 @@ module.exports = async function (fastify, opts) {
 
                 const { name, email } = request.body;
 
-                const password = generateRandomPassword();
+                // const password = generateRandomPassword();
+                const password = "bucksbox";
 
                 // ❗ Only BRANCHADMIN creation allowed
                 const role = "BRANCHADMIN";

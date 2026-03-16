@@ -16,36 +16,101 @@ async function getAccountId(tx, companyId, accountName) {
 module.exports = async function (fastify) {
     const prisma = fastify.prisma;
 
-    fastify.get("/products", {
-        preHandler: checkRole("ADMIN", "BRANCHADMIN"),
-    }, async (req, reply) => {
-        try {
-            const page = Number(req.query.page || 1)
-            const take = Number(req.query.take || 20)
-            const skip = (page - 1) * take
+fastify.get("/products", {
+    preHandler: checkRole("ADMIN", "BRANCHADMIN"),
+}, async (req, reply) => {
+    try {
+        const page   = Number(req.query.page  || 1)
+        const take   = Number(req.query.take  || 20)
+        const skip   = (page - 1) * take
+        const branchId = req.query.branchId || req.body?.branchId || null
 
-            const [products, total] = await Promise.all([
-                productSvc.listProducts(fastify.prisma, req.companyId, { skip, take }),
-                fastify.prisma.product.count({
-                    where: { companyId: req.companyId },
-                }),
-            ])
-
-            return reply.code(200).send({
-                statusCode: '00',
-                message: 'Products fetched successfully',
-                data: products,
-                pagination: { page, take, total },
-            })
-        } catch (error) {
-            fastify.log.error(error)
-            return reply.code(500).send({
-                statusCode: '99',
-                message: 'Failed to fetch products',
-                error: error.message,
+        // Branch admins MUST have a branchId
+        if (!branchId) {
+            return reply.code(400).send({
+                statusCode: '01',
+                message: 'Branch is required. Please select a branch to continue.',
             })
         }
-    });
+
+        // Verify branch belongs to this company
+        const branch = await fastify.prisma.branch.findFirst({
+            where: { id: branchId, companyId: req.companyId },
+            select: { id: true },
+        })
+
+        if (!branch) {
+            return reply.code(404).send({
+                statusCode: '02',
+                message: 'Branch not found or does not belong to this company.',
+            })
+        }
+
+        const [products, total] = await Promise.all([
+            fastify.prisma.product.findMany({
+                where:   { companyId: req.companyId },
+                skip,
+                take,
+                include: {
+                    category:    true,
+                    subCategory: true,
+                    images:      true,
+                    items: {
+                        include: {
+                            taxRate:    true,
+                            branchItems: {
+                                where: { branchId },   // only this branch's stock row
+                            },
+                        },
+                    },
+                },
+            }),
+            fastify.prisma.product.count({
+                where: { companyId: req.companyId },
+            }),
+        ])
+
+        // Flatten each item so the frontend gets a single quantity/price/barcode
+        // that already reflects the requested branch.
+        const shaped = products.map(product => ({
+            ...product,
+            items: product.items.map(item => {
+                const branchStock = item.branchItems?.[0] ?? null
+
+                return {
+                    id:        item.id,
+                    sku:       item.sku,
+                    variant:   item.variant,
+                    price:     branchStock?.price  ?? item.price,
+                    MRP:       branchStock?.mrp    ?? item.MRP,
+                    barcode:   branchStock?.barcode ?? null,
+                    location:  branchStock?.location ?? null,
+                    quantity:  branchStock?.quantity ?? 0,   // branch-level stock
+                    taxRate:   item.taxRate  ?? null,
+                    taxRateId: item.taxRateId ?? null,
+                    companyId: item.companyId,
+                    createdAt: item.createdAt,
+                    updatedAt: item.updatedAt,
+                }
+            }),
+        }))
+
+        return reply.code(200).send({
+            statusCode: '00',
+            message:    'Products fetched successfully',
+            data:       shaped,
+            pagination: { page, take, total },
+        })
+
+    } catch (error) {
+        fastify.log.error(error)
+        return reply.code(500).send({
+            statusCode: '99',
+            message:    'Failed to fetch products',
+            error:       error.message,
+        })
+    }
+})
 
     fastify.get("/product/:id", {
         preHandler: checkRole("ADMIN", "BRANCHADMIN"),
@@ -488,229 +553,275 @@ module.exports = async function (fastify) {
     });
 
 
-    fastify.post(
-        "/checkout",
-        { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
-        async (req, reply) => {
-            const {
-                cartId,
-                paymentMethod,
-                customer,
-                branchId
-            } = req.body;
+fastify.post(
+    "/checkout",
+    { preHandler: checkRole("ADMIN", "BRANCHADMIN") },
+    async (req, reply) => {
+        const {
+            cartId,
+            paymentMethod,
+            customer,
+            branchId
+        } = req.body;
 
-            const companyId = req.companyId || req.user.companyId;
+        const companyId = req.companyId || req.user.companyId;
 
-            let branch = null;
+        // ── BRANCH LOOKUP ──────────────────────────────────────────────
+        let branch = null;
 
-            if (branchId) {
-                branch = await prisma.branch.findFirst({
-                    where: { id: branchId, companyId }
+        if (branchId) {
+            // If branchId is provided, use it directly
+            branch = await prisma.branch.findFirst({
+                where: { id: branchId, companyId }
+            });
+
+            if (!branch) {
+                return reply.status(404).send({
+                    error: `Branch with id "${branchId}" not found for this company`
                 });
+            }
+        } else {
+            // No branchId sent — try MAIN branch first, then fall back to any branch
+            branch = await prisma.branch.findFirst({
+                where: { companyId, type: "MAIN" }
+            });
 
-            } else {
+            if (!branch) {
+                // Fallback: pick any branch for this company
                 branch = await prisma.branch.findFirst({
-                    where: { companyId , type: "MAIN" }
+                    where: { companyId }
                 });
             }
 
+            if (!branch) {
+                return reply.status(404).send({
+                    error: "No branch found for this company. Please create a branch first or pass branchId in the request."
+                });
+            }
+        }
 
-            return await fastify.prisma.$transaction(async (tx) => {
-                //  CART VALIDATION 
-                const cart = await tx.cart.findUnique({
-                    where: { id: cartId },
-                    include: {
-                        items: {
-                            include: {
-                                item: { include: { taxRate: true } } // 👈 one taxRate only
+        return await fastify.prisma.$transaction(async (tx) => {
+
+            // ── CART VALIDATION ────────────────────────────────────────
+            const cart = await tx.cart.findUnique({
+                where: { id: cartId },
+                include: {
+                    items: {
+                        include: {
+                            item: {
+                                include: {
+                                    taxRate: true,
+                                    branchItems: {
+                                        where: { branchId: branch.id }
+                                    },
+                                    product: true
+                                }
                             }
                         }
-                    }
-                });
-                if (!cart || cart.items.length === 0) throw new Error("Cart empty");
-
-                //  CUSTOMER 
-                let customerId = null;
-                const hasCustomer =
-                    customer?.name || customer?.mobile || customer?.email || customer?.address;
-
-                if (hasCustomer) {
-                    let existingCustomer = null;
-                    if (customer.mobile) {
-                        existingCustomer = await tx.customer.findFirst({
-                            where: { phone: customer.mobile, companyId }
-                        });
-                    }
-
-                    if (existingCustomer) {
-                        await tx.customer.update({
-                            where: { id: existingCustomer.id },
-                            data: {
-                                name: customer.name || existingCustomer.name,
-                                email: customer.email || existingCustomer.email,
-                                address: customer.address || existingCustomer.address
-                            }
-                        });
-                        customerId = existingCustomer.id;
-                    } else {
-                        const newCustomer = await tx.customer.create({
-                            data: {
-                                companyId,
-                                name: customer.name || "Guest",
-                                phone: customer.mobile || null,
-                                email: customer.email || null,
-                                address: customer.address || null
-                            }
-                        });
-                        customerId = newCustomer.id;
                     }
                 }
+            });
 
-                //  INVOICE CREATE 
-                const invoice = await tx.invoice.create({
-                    data: {
-                        companyId,
-                        customerId,
-                        branchId: branch.id,
-                        date: new Date(),
-                        status: paymentMethod === "cash" ? "PAID" : "PENDING",
-                        type: "POS",
-                        invoiceNumber: `INV${Date.now()}`,
-                        totalAmount: 0,
-                        taxAmount: 0
-                    }
-                });
+            if (!cart) {
+                return reply.status(404).send({ error: "Cart not found" });
+            }
+            if (cart.items.length === 0) {
+                return reply.status(400).send({ error: "Cart is empty" });
+            }
 
-                let totalAmount = new Decimal(0);
-                let totalTax = new Decimal(0);
+            // ── CUSTOMER ───────────────────────────────────────────────
+            let customerId = null;
+            const hasCustomer =
+                customer?.name || customer?.mobile || customer?.email;
 
-                //  INVOICE ITEMS / STOCK / TAX 
-                for (const row of cart.items) {
-                    const lineTotal = new Decimal(row.quantity).times(new Decimal(row.price));
-                    totalAmount = totalAmount.plus(lineTotal);
+            if (hasCustomer) {
+                let existingCustomer = null;
 
-                    let taxAmountForItem = new Decimal(0);
+                if (customer.mobile) {
+                    existingCustomer = await tx.customer.findFirst({
+                        where: { phone: customer.mobile, companyId }
+                    });
+                }
 
-                    if (row.item.taxRate) {
-                        const rate = new Decimal(row.item.taxRate.rate).div(100);
-                        taxAmountForItem = lineTotal.times(rate);
-                        totalTax = totalTax.plus(taxAmountForItem);
-
-                        await tx.invoiceTax.create({
-                            data: {
-                                invoiceId: invoice.id,
-                                taxRateId: row.item.taxRate.id,
-                                companyId,
-                                invoiceType: "POS",
-                                amount: parseFloat(taxAmountForItem.toFixed(2))
-                            }
-                        });
-                    }
-
-                    await tx.invoiceItem.create({
+                if (existingCustomer) {
+                    await tx.customer.update({
+                        where: { id: existingCustomer.id },
                         data: {
-                            invoiceId: invoice.id,
-                            itemId: row.itemId,
-                            productId: row.productId,
-                            quantity: row.quantity,
-                            price: row.price,
-                            total: parseFloat(lineTotal.toFixed(2)),
-                            taxRateId: row.item.taxRate?.id ?? null
+                            name: customer.name || existingCustomer.name,
+                            email: customer.email || existingCustomer.email,
                         }
                     });
-
-                    if (row.item.quantity < row.quantity) {
-                        throw new Error(`Insufficient stock for item ${row.item.name}`);
-                    }
-
-                    await tx.item.update({
-                        where: { id: row.itemId },
-                        data: { quantity: { decrement: row.quantity } }
-                    });
-
-                    await tx.stockLedger.create({
+                    customerId = existingCustomer.id;
+                } else {
+                    const newCustomer = await tx.customer.create({
                         data: {
                             companyId,
-                            itemId: row.itemId,
-                            type: "SALE",
-                            quantity: row.quantity,
-                            note: `Sale  invoice ${invoice.invoiceNumber}`
+                            name: customer.name || "Guest",
+                            phone: customer.mobile || null,
+                            email: customer.email || null,
+                        }
+                    });
+                    customerId = newCustomer.id;
+                }
+            }
+
+            // ── INVOICE CREATE ─────────────────────────────────────────
+            const invoice = await tx.invoice.create({
+                data: {
+                    companyId,
+                    customerId,
+                    branchId: branch.id,
+                    date: new Date(),
+                    status: paymentMethod?.toLowerCase() === "cash" ? "PAID" : "PENDING",
+                    type: "POS",
+                    invoiceNumber: `INV${Date.now()}`,
+                    totalAmount: 0,
+                    taxAmount: 0
+                }
+            });
+
+            let totalAmount = new Decimal(0);
+            let totalTax = new Decimal(0);
+
+            // ── INVOICE ITEMS / STOCK / TAX ────────────────────────────
+            for (const row of cart.items) {
+                const lineTotal = new Decimal(row.quantity).times(new Decimal(row.price));
+                totalAmount = totalAmount.plus(lineTotal);
+
+                let taxAmountForItem = new Decimal(0);
+
+                if (row.item.taxRate) {
+                    const rate = new Decimal(row.item.taxRate.rate).div(100);
+                    taxAmountForItem = lineTotal.times(rate);
+                    totalTax = totalTax.plus(taxAmountForItem);
+
+                    await tx.invoiceTax.create({
+                        data: {
+                            invoiceId: invoice.id,
+                            taxRateId: row.item.taxRate.id,
+                            companyId,
+                            invoiceType: "POS",
+                            amount: parseFloat(taxAmountForItem.toFixed(2))
                         }
                     });
                 }
 
-                //  UPDATE INVOICE TOTALS 
-                await tx.invoice.update({
-                    where: { id: invoice.id },
+                await tx.invoiceItem.create({
                     data: {
-                        totalAmount: parseFloat(totalAmount.toFixed(2)),
-                        taxAmount: parseFloat(totalTax.toFixed(2))
-                    }
-                });
-
-                //  PAYMENT 
-                await tx.payment.create({
-                    data: {
-                        companyId,
                         invoiceId: invoice.id,
-                        amount: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
-                        method: paymentMethod.toUpperCase()
+                        itemId: row.itemId,
+                        productId: row.productId,
+                        quantity: row.quantity,
+                        price: row.price,
+                        total: parseFloat(lineTotal.toFixed(2)),
+                        taxRateId: row.item.taxRate?.id ?? null
                     }
                 });
 
-                //  JOURNAL ENTRIES 
-                const description = `Invoice ${invoice.invoiceNumber}`;
+                // ── STOCK CHECK via BranchItem ─────────────────────────
+                const branchItem = row.item.branchItems[0];
 
-                await tx.journalEntry.create({
-                    data: {
-                        companyId,
-                        accountId: await getAccountId(tx, companyId, "Cash"),
-                        date: new Date(),
-                        description,
-                        debit: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
-                        credit: 0
-                    }
+                if (!branchItem || branchItem.quantity < row.quantity) {
+                    const productName = row.item.product?.name || row.item.sku || row.itemId;
+                    const available = branchItem?.quantity ?? 0;
+                    throw new Error(
+                        `Insufficient stock for "${productName}" — requested: ${row.quantity}, available: ${available}`
+                    );
+                }
+
+                await tx.branchItem.update({
+                    where: { id: branchItem.id },
+                    data: { quantity: { decrement: row.quantity } }
                 });
 
+                await tx.stockLedger.create({
+                    data: {
+                        companyId,
+                        itemId: row.itemId,
+                        branchId: branch.id,
+                        type: "SALE",
+                        quantity: row.quantity,
+                        note: `Sale invoice ${invoice.invoiceNumber}`
+                    }
+                });
+            }
+
+            // ── UPDATE INVOICE TOTALS ──────────────────────────────────
+            await tx.invoice.update({
+                where: { id: invoice.id },
+                data: {
+                    totalAmount: parseFloat(totalAmount.toFixed(2)),
+                    taxAmount: parseFloat(totalTax.toFixed(2))
+                }
+            });
+
+            // ── PAYMENT ────────────────────────────────────────────────
+            await tx.payment.create({
+                data: {
+                    companyId,
+                    invoiceId: invoice.id,
+                    amount: parseFloat(totalAmount.plus(totalTax).toFixed(2)),
+                    method: paymentMethod.toUpperCase()
+                }
+            });
+
+            // ── JOURNAL ENTRIES ────────────────────────────────────────
+            const description = `Invoice ${invoice.invoiceNumber}`;
+            const grandTotal = parseFloat(totalAmount.plus(totalTax).toFixed(2));
+
+            await tx.journalEntry.create({
+                data: {
+                    companyId,
+                    accountId: await getAccountId(tx, companyId, "Cash"),
+                    date: new Date(),
+                    description,
+                    debit: grandTotal,
+                    credit: 0
+                }
+            });
+
+            await tx.journalEntry.create({
+                data: {
+                    companyId,
+                    accountId: await getAccountId(tx, companyId, "Sales Revenue"),
+                    date: new Date(),
+                    description,
+                    debit: 0,
+                    credit: parseFloat(totalAmount.toFixed(2))
+                }
+            });
+
+            if (totalTax.gt(0)) {
                 await tx.journalEntry.create({
                     data: {
                         companyId,
-                        accountId: await getAccountId(tx, companyId, "Sales Revenue"),
+                        accountId: await getAccountId(tx, companyId, "Tax Payable"),
                         date: new Date(),
                         description,
                         debit: 0,
-                        credit: parseFloat(totalAmount.toFixed(2))
+                        credit: parseFloat(totalTax.toFixed(2))
                     }
                 });
+            }
 
-                if (totalTax.gt(0)) {
-                    await tx.journalEntry.create({
-                        data: {
-                            companyId,
-                            accountId: await getAccountId(tx, companyId, "Tax Payable"),
-                            date: new Date(),
-                            description,
-                            debit: 0,
-                            credit: parseFloat(totalTax.toFixed(2))
-                        }
-                    });
-                }
-
-                //  CLOSE CART 
-                await tx.cart.update({
-                    where: { id: cartId },
-                    data: { status: "CHECKEDOUT" }
-                });
-
-                return reply.send({
-                    statusCode: "00",
-                    message: "Checkout successful",
-                    invoiceId: invoice.id,
-                    customerId
-                });
+            // ── CLOSE CART ─────────────────────────────────────────────
+            await tx.cart.update({
+                where: { id: cartId },
+                data: { status: "CHECKEDOUT" }
             });
-        }
-    );
+
+            return reply.send({
+                statusCode: "00",
+                message: "Checkout successful",
+                invoiceId: invoice.id,
+                invoiceNumber: invoice.invoiceNumber,
+                branchId: branch.id,
+                branchName: branch.name,
+                customerId
+            });
+        });
+    }
+);
 
     fastify.post("/pos/quick-sale", {
         preHandler: checkRole("ADMIN", "BRANCHADMIN"),

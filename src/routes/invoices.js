@@ -22,6 +22,40 @@ module.exports = async function (fastify, opts) {
           })
         }
 
+                // ── BRANCH LOOKUP ──────────────────────────────────────────────
+        let branch = null;
+
+        if (branchId) {
+            // If branchId is provided, use it directly
+            branch = await prisma.branch.findFirst({
+                where: { id: branchId, companyId }
+            });
+
+            if (!branch) {
+                return reply.status(404).send({
+                    error: `Branch with id "${branchId}" not found for this company`
+                });
+            }
+        } else {
+            // No branchId sent — try MAIN branch first, then fall back to any branch
+            branch = await prisma.branch.findFirst({
+                where: { companyId, type: "MAIN" }
+            });
+
+            if (!branch) {
+                // Fallback: pick any branch for this company
+                branch = await prisma.branch.findFirst({
+                    where: { companyId }
+                });
+            }
+
+            if (!branch) {
+                return reply.status(404).send({
+                    error: "No branch found for this company. Please create a branch first or pass branchId in the request."
+                });
+            }
+        }
+
         const invoiceData = {
           invoiceNumber,
           date,
@@ -30,7 +64,7 @@ module.exports = async function (fastify, opts) {
           status: 'PENDING',
           companyId: request.user.companyId || request.companyId,
           customerId,
-          branchId,
+          branchId : branch.id,
         }
 
         const invoice = await svc.createInvoice(fastify.prisma, invoiceData)
@@ -59,12 +93,46 @@ module.exports = async function (fastify, opts) {
       try {
         const { vendorId, invoiceNumber, branchId, date, dueDate, items } = request.body
 
+                // ── BRANCH LOOKUP ──────────────────────────────────────────────
+        let branch = null;
+
+        if (branchId) {
+            // If branchId is provided, use it directly
+            branch = await prisma.branch.findFirst({
+                where: { id: branchId, companyId }
+            });
+
+            if (!branch) {
+                return reply.status(404).send({
+                    error: `Branch with id "${branchId}" not found for this company`
+                });
+            }
+        } else {
+            // No branchId sent — try MAIN branch first, then fall back to any branch
+            branch = await prisma.branch.findFirst({
+                where: { companyId, type: "MAIN" }
+            });
+
+            if (!branch) {
+                // Fallback: pick any branch for this company
+                branch = await prisma.branch.findFirst({
+                    where: { companyId }
+                });
+            }
+
+            if (!branch) {
+                return reply.status(404).send({
+                    error: "No branch found for this company. Please create a branch first or pass branchId in the request."
+                });
+            }
+        }
+
         const invoiceData = {
           invoiceNumber,
           date,
           dueDate,
           items,
-          branchId,                       // <-- pass only this
+          branchId : branch.id,                       // <-- pass only this
           type: 'PURCHASE',
           status: 'PENDING',
           companyId: request.user.companyId || request.companyId,

@@ -22,6 +22,8 @@ module.exports = async function (fastify, opts) {
           })
         }
 
+        const companyId = request.user.companyId || request.companyId
+
                 // ── BRANCH LOOKUP ──────────────────────────────────────────────
         let branch = null;
 
@@ -95,6 +97,8 @@ module.exports = async function (fastify, opts) {
 
                 // ── BRANCH LOOKUP ──────────────────────────────────────────────
         let branch = null;
+
+        const companyId = request.user.companyId || request.companyId
 
         if (branchId) {
             // If branchId is provided, use it directly

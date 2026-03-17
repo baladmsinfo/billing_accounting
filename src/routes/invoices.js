@@ -22,7 +22,7 @@ module.exports = async function (fastify, opts) {
           })
         }
 
-        const companyId = request.user.companyId || request.companyId
+        const companyId = request.user?.companyId || request.companyId
 
                 // ── BRANCH LOOKUP ──────────────────────────────────────────────
         let branch = null;
@@ -41,15 +41,8 @@ module.exports = async function (fastify, opts) {
         } else {
             // No branchId sent — try MAIN branch first, then fall back to any branch
             branch = await fastify.prisma.branch.findFirst({
-                where: { companyId, type: "MAIN" }
+                where: { id: request.branchId || request.user?.branchId , companyId }
             });
-
-            if (!branch) {
-                // Fallback: pick any branch for this company
-                branch = await fastify.prisma.branch.findFirst({
-                    where: { companyId }
-                });
-            }
 
             if (!branch) {
                 return reply.status(404).send({
@@ -98,7 +91,7 @@ module.exports = async function (fastify, opts) {
                 // ── BRANCH LOOKUP ──────────────────────────────────────────────
         let branch = null;
 
-        const companyId = request.user.companyId || request.companyId
+        const companyId = request.user?.companyId || request.companyId
 
         if (branchId) {
             // If branchId is provided, use it directly
@@ -114,15 +107,8 @@ module.exports = async function (fastify, opts) {
         } else {
             // No branchId sent — try MAIN branch first, then fall back to any branch
             branch = await fastify.prisma.branch.findFirst({
-                where: { companyId, type: "MAIN" }
+                where: { id: request.branchId || request.user?.branchId , companyId }
             });
-
-            if (!branch) {
-                // Fallback: pick any branch for this company
-                branch = await fastify.prisma.branch.findFirst({
-                    where: { companyId }
-                });
-            }
 
             if (!branch) {
                 return reply.status(404).send({

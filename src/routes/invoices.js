@@ -27,7 +27,7 @@ module.exports = async function (fastify, opts) {
 
         if (branchId) {
             // If branchId is provided, use it directly
-            branch = await prisma.branch.findFirst({
+            branch = await fastify.prisma.branch.findFirst({
                 where: { id: branchId, companyId }
             });
 
@@ -38,13 +38,13 @@ module.exports = async function (fastify, opts) {
             }
         } else {
             // No branchId sent — try MAIN branch first, then fall back to any branch
-            branch = await prisma.branch.findFirst({
+            branch = await fastify.prisma.branch.findFirst({
                 where: { companyId, type: "MAIN" }
             });
 
             if (!branch) {
                 // Fallback: pick any branch for this company
-                branch = await prisma.branch.findFirst({
+                branch = await fastify.prisma.branch.findFirst({
                     where: { companyId }
                 });
             }
@@ -98,7 +98,7 @@ module.exports = async function (fastify, opts) {
 
         if (branchId) {
             // If branchId is provided, use it directly
-            branch = await prisma.branch.findFirst({
+            branch = await fastify.prisma.branch.findFirst({
                 where: { id: branchId, companyId }
             });
 
@@ -109,13 +109,13 @@ module.exports = async function (fastify, opts) {
             }
         } else {
             // No branchId sent — try MAIN branch first, then fall back to any branch
-            branch = await prisma.branch.findFirst({
+            branch = await fastify.prisma.branch.findFirst({
                 where: { companyId, type: "MAIN" }
             });
 
             if (!branch) {
                 // Fallback: pick any branch for this company
-                branch = await prisma.branch.findFirst({
+                branch = await fastify.prisma.branch.findFirst({
                     where: { companyId }
                 });
             }

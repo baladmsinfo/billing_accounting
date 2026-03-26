@@ -106,6 +106,8 @@ fastify.after(async () => {
     if (fastify.config.NODE_ENV === "development") {
       publicPaths = [
         "/public/",
+        "/api/offline/register",
+        "/api/offline/login",
         "/api/store/init",
         "/api/users/login",
         "/api/users/send-otp",

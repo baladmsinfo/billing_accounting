@@ -98,6 +98,7 @@ fastify.after(async () => {
 
   // App plugins
   fastify.register(require('./plugins/prisma'))
+  
   fastify.register(require('./plugins/auth'))
 
   fastify.addHook("preHandler", async (req, reply) => {

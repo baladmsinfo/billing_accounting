@@ -125,6 +125,8 @@ fastify.after(async () => {
       publicPaths = [
         "/public/",
         "/public/makepayment.js",
+        "/api/offline/register",
+        "/api/offline/login",
         "/public/assets/js/",
         "/public/output.css",
         "/api/store/init",

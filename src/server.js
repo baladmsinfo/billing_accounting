@@ -239,6 +239,7 @@ fastify.after(async () => {
   fastify.register(require('./routes/taxRates'), { prefix: '/api/tax-rates' })
   fastify.register(require('./routes/stock'), { prefix: '/api/stock' })
   fastify.register(require('./routes/store'), { prefix: '/api/store' })
+  fastify.register(require('./routes/codered.checkout.routes'), { prefix: '/api/codered' })
   fastify.register(require('./routes/pos'), { prefix: '/api/pos' })
   fastify.register(require("./routes/upload"));
 

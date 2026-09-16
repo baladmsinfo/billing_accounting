@@ -33,12 +33,11 @@ module.exports = async function (fastify) {
                 include: {
                     currency: true,
 
-                    // ✅ ONLY DEFAULT BANNER
                     banners: {
                         where: {
                             manage: true
                         },
-                        take: 1   // extra safety (even if logic breaks someday)
+                        take: 1
                     }
                 }
             })

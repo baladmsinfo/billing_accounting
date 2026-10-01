@@ -18,7 +18,8 @@ module.exports = async function (fastify, opts) {
             itemId: { type: 'string', example: '<item-id>' },
             type: { type: 'string', enum: ['PURCHASE', 'SALE', 'ADJUSTMENT'], example: 'PURCHASE' },
             quantity: { type: 'number', example: 20 },
-            note: { type: 'string', example: 'Restocking' }
+            note: { type: 'string', example: 'Restocking' },
+            branchId: { type: 'string', example: '<branch-id>', description: 'Defaults to the company\'s MAIN branch' }
           }
         }
       }
@@ -34,6 +35,9 @@ module.exports = async function (fastify, opts) {
           data: rec
         })
       } catch (err) {
+        if (err.appCode === 'STOCK_INPUT') {
+          return reply.code(400).send({ statusCode: '01', message: err.message })
+        }
         fastify.log.error(err)
         return reply.code(500).send({
           statusCode: '99',

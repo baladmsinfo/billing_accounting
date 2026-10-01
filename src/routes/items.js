@@ -150,8 +150,6 @@ module.exports = async function (fastify, opts) {
           properties: {
             sku: { type: 'string', example: 'LAP-001-RED' },
             price: { type: 'number', example: 76000 },
-            quantity: { type: 'integer', example: 60 },
-            location: { type: 'string', example: 'Warehouse B' },
             productId: { type: 'string', format: 'uuid' }
           }
         }
@@ -160,13 +158,14 @@ module.exports = async function (fastify, opts) {
     async (request, reply) => {
       try {
         const { id } = request.params
-        const { sku, price, quantity, location, productId } = request.body
+        // `quantity` / `location` are per-branch (BranchItem), not on Item itself —
+        // adjust stock via POST /api/stock instead.
+        const { sku, price, productId } = request.body
 
-        if (!sku && !price && !quantity && !location && !productId) {
+        if (!sku && !price && !productId) {
           return reply.code(400).send({
             statusCode: '01',
-            message:
-              'At least one field (sku, price, quantity, location, productId) is required to update'
+            message: 'At least one field (sku, price, productId) is required to update'
           })
         }
 
@@ -178,24 +177,9 @@ module.exports = async function (fastify, opts) {
           })
         }
 
-        let quantityDiff = 0
-        if (typeof quantity === 'number' && quantity !== item.quantity) {
-          quantityDiff = quantity - item.quantity
-
-          await fastify.prisma.stockLedger.create({
-            data: {
-              companyId: item.companyId,
-              itemId: item.id,
-              type: quantityDiff > 0 ? 'PURCHASE' : 'ADJUSTMENT',
-              quantity: Math.abs(quantityDiff),
-              note: `Quantity updated from ${item.quantity} to ${quantity}`
-            }
-          })
-        }
-
         const updated = await fastify.prisma.item.update({
           where: { id },
-          data: { sku, price, quantity, location, productId }
+          data: { sku, price, productId }
         })
 
         return reply.code(200).send({

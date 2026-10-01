@@ -283,8 +283,7 @@ module.exports = async function (fastify, opts) {
                     },
                     invoiceTax: true,
                     customer: true,
-                    vendor: true,
-                    payments: true
+                    vendor: true
                 }
             });
 

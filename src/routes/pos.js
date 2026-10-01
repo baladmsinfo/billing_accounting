@@ -600,6 +600,7 @@ fastify.post(
             }
         }
 
+        try {
         return await fastify.prisma.$transaction(async (tx) => {
 
             // ── CART VALIDATION ────────────────────────────────────────
@@ -724,9 +725,11 @@ fastify.post(
                 if (!branchItem || branchItem.quantity < row.quantity) {
                     const productName = row.item.product?.name || row.item.sku || row.itemId;
                     const available = branchItem?.quantity ?? 0;
-                    throw new Error(
+                    const e = new Error(
                         `Insufficient stock for "${productName}" — requested: ${row.quantity}, available: ${available}`
                     );
+                    e.appCode = "INSUFFICIENT_STOCK";
+                    throw e;
                 }
 
                 await tx.branchItem.update({
@@ -820,6 +823,17 @@ fastify.post(
                 customerId
             });
         });
+        } catch (err) {
+            if (err.appCode === "INSUFFICIENT_STOCK") {
+                return reply.code(400).send({ statusCode: "01", message: err.message });
+            }
+            fastify.log.error(err);
+            return reply.code(500).send({
+                statusCode: "99",
+                message: "Checkout failed",
+                error: err.message
+            });
+        }
     }
 );
 

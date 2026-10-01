@@ -1,5 +1,6 @@
 'use strict'
 const checkRole = require('../utils/checkRole');
+const resolveBranch = require('../utils/resolveBranch');
 const { enqueueUserRegistrationEmail } = require("../services/emailServices");
 const bcrypt = require('bcrypt');
 
@@ -181,7 +182,15 @@ module.exports = async function (fastify, opts) {
 
     fastify.get("/products-sync", async (req, reply) => {
         try {
-            const { companyId, branchId } = req.user;
+            const { companyId } = req.user;
+
+            // Company-level ADMIN tokens carry branchId: null — fall back to the
+            // MAIN branch (same branch POS checkout / invoices book stock against).
+            const { branch } = await resolveBranch(fastify.prisma, {
+                companyId,
+                userBranchId: req.user.branchId,
+            });
+            const branchId = branch?.id ?? null;
 
             const categories = await fastify.prisma.category.findMany({
                 where: { companyId }
@@ -196,16 +205,18 @@ module.exports = async function (fastify, opts) {
                 }
             });
 
-            const branchItems = await fastify.prisma.branchItem.findMany({
-                where: { branchId },
-                include: {
-                    item: {
-                        include: {
-                            product: true
+            const branchItems = branchId
+                ? await fastify.prisma.branchItem.findMany({
+                    where: { branchId },
+                    include: {
+                        item: {
+                            include: {
+                                product: true
+                            }
                         }
                     }
-                }
-            });
+                })
+                : [];
 
             return reply.send({
                 statusCode: "00",
@@ -252,12 +263,17 @@ module.exports = async function (fastify, opts) {
         try {
             const { branchId, companyId, role } = req.user;
 
-            const filter = (role === "ADMIN" || role === "SUPERADMIN")
+            // Always scope by company; branch users additionally see only their branch.
+            const filter = (role === "ADMIN" || role === "SUPERADMIN" || !branchId)
                 ? { companyId }
-                : { branchId };
+                : { companyId, branchId };
 
+            // Invoice has no `taxes` / `party` relations — the real ones are
+            // invoiceTax, customer and vendor (requesting unknown relations made
+            // Prisma throw on every call).
             const invoices = await fastify.prisma.invoice.findMany({
                 where: filter,
+                orderBy: { date: "desc" },
                 include: {
                     items: {
                         include: {
@@ -265,8 +281,10 @@ module.exports = async function (fastify, opts) {
                             item: true
                         }
                     },
-                    taxes: true,
-                    party: true
+                    invoiceTax: true,
+                    customer: true,
+                    vendor: true,
+                    payments: true
                 }
             });
 

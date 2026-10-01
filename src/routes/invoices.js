@@ -2,6 +2,7 @@
 const svc = require('../services/invoiceService')
 const { CartStatus } = require('@prisma/client')
 const checkRole = require('../utils/checkRole')
+const resolveBranch = require('../utils/resolveBranch')
 
 const { getAccountId } = require('../services/invoiceService')
 
@@ -24,32 +25,15 @@ module.exports = async function (fastify, opts) {
 
         const companyId = request.user?.companyId || request.companyId
 
-                // ── BRANCH LOOKUP ──────────────────────────────────────────────
-        let branch = null;
-
-        if (branchId) {
-            // If branchId is provided, use it directly
-            branch = await fastify.prisma.branch.findFirst({
-                where: { id: branchId, companyId }
-            });
-
-            if (!branch) {
-                return reply.status(404).send({
-                    error: `Branch with id "${branchId}" not found for this company`
-                });
-            }
-        } else {
-            // No branchId sent — try MAIN branch first, then fall back to any branch
-            branch = await fastify.prisma.branch.findFirst({
-                where: { id: request.branchId || request.user?.branchId , companyId }
-            });
-
-            if (!branch) {
-                return reply.status(404).send({
-                    error: "No branch found for this company. Please create a branch first or pass branchId in the request."
-                });
-            }
+        const resolved = await resolveBranch(fastify.prisma, {
+          companyId,
+          branchId,
+          userBranchId: request.branchId || request.user?.branchId,
+        })
+        if (resolved.error) {
+          return reply.status(resolved.status).send({ error: resolved.error })
         }
+        const branch = resolved.branch
 
         const invoiceData = {
           invoiceNumber,
@@ -88,34 +72,17 @@ module.exports = async function (fastify, opts) {
       try {
         const { vendorId, invoiceNumber, branchId, date, dueDate, items } = request.body
 
-                // ── BRANCH LOOKUP ──────────────────────────────────────────────
-        let branch = null;
-
         const companyId = request.user?.companyId || request.companyId
 
-        if (branchId) {
-            // If branchId is provided, use it directly
-            branch = await fastify.prisma.branch.findFirst({
-                where: { id: branchId, companyId }
-            });
-
-            if (!branch) {
-                return reply.status(404).send({
-                    error: `Branch with id "${branchId}" not found for this company`
-                });
-            }
-        } else {
-            // No branchId sent — try MAIN branch first, then fall back to any branch
-            branch = await fastify.prisma.branch.findFirst({
-                where: { id: request.branchId || request.user?.branchId , companyId }
-            });
-
-            if (!branch) {
-                return reply.status(404).send({
-                    error: "No branch found for this company. Please create a branch first or pass branchId in the request."
-                });
-            }
+        const resolved = await resolveBranch(fastify.prisma, {
+          companyId,
+          branchId,
+          userBranchId: request.branchId || request.user?.branchId,
+        })
+        if (resolved.error) {
+          return reply.status(resolved.status).send({ error: resolved.error })
         }
+        const branch = resolved.branch
 
         const invoiceData = {
           invoiceNumber,

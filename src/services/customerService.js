@@ -1,28 +1,46 @@
 // src/services/customerService.js
+// trimmed string, or null when blank / missing
+function clean(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
 async function createCustomer(prisma, data) {
+  const name = clean(data.name);
+  if (!name) {
+    const err = new Error("Customer name is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // CustomerAddress requires addressLine1, city and state — only create one
+  // when an address was actually given (the POS app sends name/phone/email/gstin
+  // only, which used to fail with "Argument `addressLine1` is missing").
+  const addressLine1 = clean(data.addressLine1);
+  const address = addressLine1
+    ? {
+      addressLine1,
+      addressLine2: clean(data.addressLine2),
+      addressLine3: clean(data.addressLine3),
+      city: clean(data.city) ?? "",
+      state: clean(data.state) ?? "",
+      country: clean(data.country),
+      pincode: clean(data.pincode),
+      isDefault: true,
+    }
+    : null;
+
   return prisma.customer.create({
     data: {
-      name: data.name,
-      email: data.email,
-      phone: data.phone,
-      gstin: data.gstin,
+      name,
+      email: clean(data.email),
+      phone: clean(data.phone),
+      gstin: clean(data.gstin),
       companyId: data.companyId,
 
-      // Create Customer Address
-      addresses: {
-        create: [
-          {
-            addressLine1: data.addressLine1,
-            addressLine2: data.addressLine2,
-            addressLine3: data.addressLine3,
-            city: data.city,
-            state: data.state,
-            country: data.country,
-            pincode: data.pincode,
-            isDefault: true,
-          }
-        ]
-      },
+      // Create Customer Address (only when provided)
+      ...(address ? { addresses: { create: [address] } } : {}),
 
       // Create default Cart
       carts: {

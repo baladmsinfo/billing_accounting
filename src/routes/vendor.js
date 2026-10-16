@@ -12,17 +12,32 @@ module.exports = async function (fastify, opts) {
         },
         async (request, reply) => {
             try {
-                const { name, email, phone, address, gstin } = request.body
+                const { name, email, phone, address, gstin } = request.body || {}
                 const companyId = request.user.companyId
 
+                // schema: name and gstin are required, gstin is unique
+                if (!name?.trim() || !gstin?.trim()) {
+                    return reply.status(400).send({ statusCode: '01', message: 'Vendor name and GSTIN are required' })
+                }
+
                 const vendor = await prisma.vendor.create({
-                    data: { name, email, phone, address, companyId, gstin }
+                    data: {
+                        name: name.trim(),
+                        email: email?.trim() || null,
+                        phone: phone ? String(phone).trim() : null,
+                        address: address?.trim() || null,
+                        companyId,
+                        gstin: gstin.trim().toUpperCase(),
+                    }
                 })
 
                 reply.send({ statusCode: '00', message: "Vendor created successfully", data: vendor })
             } catch (err) {
                 request.log.error(err)
-                reply.status(500).send({ statusCode: '99', error: 'Vendor creation failed' })
+                if (err.code === 'P2002') {
+                    return reply.status(400).send({ statusCode: '02', message: 'A vendor with this GSTIN already exists' })
+                }
+                reply.status(500).send({ statusCode: '99', message: 'Vendor creation failed', error: err.message })
             }
         }
     )

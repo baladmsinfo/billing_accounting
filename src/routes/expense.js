@@ -1,6 +1,7 @@
 'use strict'
 const checkRole = require('../utils/checkRole')
 const { getAccountId } = require('../services/invoiceService')
+const { ensureDefaultAccounts } = require('../utils/defaultAccounts')
 
 module.exports = async function (fastify, opts) {
 
@@ -58,6 +59,9 @@ module.exports = async function (fastify, opts) {
 
                 console.log("Branch", branch);
 
+
+                // companies registered without a chart of accounts get the defaults now
+                await ensureDefaultAccounts(fastify.prisma, companyId)
 
                 const expenseAccount = await fastify.prisma.account.findFirst({
                     where: { companyId, type: 'EXPENSE', name: { contains: category, mode: 'insensitive' } }

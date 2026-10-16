@@ -23,6 +23,9 @@ module.exports = async function (fastify, opts) {
         });
       } catch (error) {
         fastify.log.error(error);
+        if (error.statusCode === 400) {
+          return reply.code(400).send({ statusCode: "01", message: error.message });
+        }
         reply.code(500).send({
           statusCode: "99",
           message: "Failed to create customer",

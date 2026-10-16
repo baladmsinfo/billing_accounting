@@ -1,5 +1,6 @@
 const { Prisma } = require('@prisma/client')
 const { Decimal } = Prisma
+const { getAccountId } = require('../utils/defaultAccounts')
 
 async function createInvoice(prisma, data) {
   return prisma.$transaction(async (tx) => {
@@ -520,12 +521,5 @@ async function createPurchaseInvoice(prisma, data) {
   })
 }
 
-async function getAccountId(tx, companyId, accountName) {
-  const acc = await tx.account.findFirst({
-    where: { companyId, name: accountName }
-  })
-  if (!acc) throw new Error(`Account not found: ${accountName}`)
-  return acc.id
-}
 
 module.exports = { createInvoice, createPurchaseInvoice, getAccountId }

@@ -4,14 +4,7 @@ const productSvc = require('../services/productService')
 const Decimal = require('decimal.js');
 
 const checkRole = require('../utils/checkRole')
-
-async function getAccountId(tx, companyId, accountName) {
-    const acc = await tx.account.findFirst({
-        where: { companyId, name: accountName }
-    })
-    if (!acc) throw new Error(`Account not found: ${accountName}`)
-    return acc.id
-}
+const { getAccountId } = require('../utils/defaultAccounts')
 
 module.exports = async function (fastify) {
     const prisma = fastify.prisma;
@@ -154,10 +147,19 @@ fastify.get("/products", {
 
     fastify.post("/customer/create", {
         preHandler: checkRole("ADMIN", "BRANCHADMIN"),
-    }, async (req) => {
-        const { companyId, name, email, phone } = req.body;
+    }, async (req, reply) => {
+        const { name, email, phone } = req.body || {};
+        if (!name?.trim()) {
+            return reply.code(400).send({ statusCode: "01", message: "Customer name is required" });
+        }
+        // always the caller's own company — never trust a companyId from the body
         return prisma.customer.create({
-            data: { companyId, name, email, phone }
+            data: {
+                companyId: req.companyId,
+                name: name.trim(),
+                email: email?.trim() || null,
+                phone: phone ? String(phone).trim() : null,
+            }
         });
     });
 

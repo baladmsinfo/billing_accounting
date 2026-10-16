@@ -1,6 +1,7 @@
 'use strict'
 const checkRole = require('../utils/checkRole');
 const resolveBranch = require('../utils/resolveBranch');
+const { ensureDefaultAccounts } = require('../utils/defaultAccounts');
 const { enqueueUserRegistrationEmail } = require("../services/emailServices");
 const bcrypt = require('bcrypt');
 
@@ -409,6 +410,10 @@ module.exports = async function (fastify, opts) {
                     tenant,
                 }
             });
+
+            // Default chart of accounts — POS checkout / invoices / payments post
+            // journal entries to these ("Account not found: Cash" without them)
+            await ensureDefaultAccounts(fastify.prisma, company.id);
 
             // ------------------------------------
             // 3️⃣ Create Branch

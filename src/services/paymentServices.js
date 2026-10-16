@@ -1,3 +1,5 @@
+const { getAccountId } = require('../utils/defaultAccounts')
+
 async function createPayment(prisma, data) {
   return prisma.$transaction(async (tx) => {
     const payment = await tx.payment.create({
@@ -133,10 +135,5 @@ async function updateInvoiceStatus(tx, invoiceId, items) {
   console.log("updatedInvoiceItems:", await Promise.all(updatedInvoiceItems));
 }
 
-async function getAccountId(tx, companyId, name) {
-  const acc = await tx.account.findFirst({ where: { companyId, name } })
-  if (!acc) throw new Error(`Account not found: ${name}`)
-  return acc.id
-}
 
 module.exports = { createPayment, recordPurchasePayment }

@@ -322,10 +322,19 @@ module.exports = async function (fastify) {
         }
     });
 
-    fastify.post("/customer/create", async (req) => {
-        const { companyId, name, email, phone } = req.body;
+    fastify.post("/customer/create", async (req, reply) => {
+        const { name, email, phone } = req.body || {};
+        if (!name?.trim()) {
+            return reply.code(400).send({ statusCode: "01", message: "Customer name is required" });
+        }
+        // the API key / token decides the company — never a companyId from the body
         return prisma.customer.create({
-            data: { companyId, name, email, phone }
+            data: {
+                companyId: req.companyId,
+                name: name.trim(),
+                email: email?.trim() || null,
+                phone: phone ? String(phone).trim() : null,
+            }
         });
     });
 
@@ -1052,25 +1061,28 @@ module.exports = async function (fastify) {
                 customer = await tx.customer.create({
                     data: {
                         companyId,
-                        name: `${form.firstName} ${form.lastName}`.trim(),
-                        email: form.email || null,
-                        phone: String(form.phone) || null
+                        name: `${form.firstName ?? ''} ${form.lastName ?? ''}`.trim() || 'Guest',
+                        email: form.email?.trim() || null,
+                        phone: form.phone ? String(form.phone).trim() : null
                     }
                 });
 
                 customerId = customer.id;
 
-                // CREATE CUSTOMER ADDRESS
-                await tx.customerAddress.create({
-                    data: {
-                        customerId,
-                        addressLine1: form.address,
-                        city: form.city,
-                        state: form.state,
-                        pincode: form.zip,
-                        isDefault: true
-                    }
-                });
+                // CREATE CUSTOMER ADDRESS (addressLine1/city/state are required
+                // by the schema — skip it when no address was given)
+                if (form.address) {
+                    await tx.customerAddress.create({
+                        data: {
+                            customerId,
+                            addressLine1: form.address,
+                            city: form.city || '',
+                            state: form.state || '',
+                            pincode: form.zip ? String(form.zip) : null,
+                            isDefault: true
+                        }
+                    });
+                }
             }
 
             // --------------------------- INVOICE CREATION --------------------------- //

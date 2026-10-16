@@ -1,5 +1,6 @@
 'use strict'
 const productSvc = require('../services/productService')
+const stockSvc = require('../services/stockService')
 const checkRole = require('../utils/checkRole')
 
 module.exports = async function (fastify, opts) {
@@ -410,8 +411,7 @@ module.exports = async function (fastify, opts) {
                   id: { type: 'string', example: 'itm12345' }, // optional for new items
                   sku: { type: 'string', example: 'LAP-001-RED' },
                   price: { type: 'number', example: 77000 },
-                  quantity: { type: 'integer', example: 60 },
-                  location: { type: 'string', example: 'Warehouse A' }
+                  quantity: { type: 'integer', example: 60, description: 'Initial stock, new items only' }
                 }
               }
             }
@@ -452,51 +452,36 @@ module.exports = async function (fastify, opts) {
           for (const item of items) {
             if (item.id) {
               // Existing item: update
+              // Item has no quantity/location columns — stock lives on BranchItem
+              // and changes go through POST /api/stock. Only touch Item fields
+              // the client actually sent.
               const existingItem = product.items.find(i => i.id === item.id)
               if (existingItem) {
-                const quantityDiff = item.quantity - existingItem.quantity
-
-                await fastify.prisma.item.update({
-                  where: { id: item.id },
-                  data: {
-                    sku: item.sku,
-                    price: item.price,
-                    quantity: item.quantity,
-                    location: item.location
-                  }
-                })
-
-                if (quantityDiff !== 0) {
-                  await fastify.prisma.stockLedger.create({
-                    data: {
-                      companyId,
-                      itemId: existingItem.id,
-                      type: quantityDiff > 0 ? 'PURCHASE' : 'ADJUSTMENT',
-                      quantity: Math.abs(quantityDiff),
-                      note: 'Stock updated via product update'
-                    }
-                  })
+                const data = {}
+                if (item.sku !== undefined) data.sku = item.sku
+                if (item.price !== undefined) data.price = item.price
+                if (Object.keys(data).length) {
+                  await fastify.prisma.item.update({ where: { id: item.id }, data })
                 }
               }
             } else {
               // New item: create
               const newItem = await fastify.prisma.item.create({
                 data: {
-                  ...item,
+                  sku: item.sku,
+                  price: item.price,
                   productId: product.id,
                   companyId
                 }
               })
 
-              if (item.quantity && item.quantity > 0) {
-                await fastify.prisma.stockLedger.create({
-                  data: {
-                    itemId: newItem.id,
-                    companyId,
-                    type: 'PURCHASE',
-                    quantity: item.quantity,
-                    note: 'Initial stock for new item'
-                  }
+              if (Number.isFinite(item.quantity) && item.quantity > 0) {
+                await stockSvc.recordStock(fastify.prisma, {
+                  companyId,
+                  itemId: newItem.id,
+                  type: 'PURCHASE',
+                  quantity: item.quantity,
+                  note: 'Initial stock for new item'
                 })
               }
             }

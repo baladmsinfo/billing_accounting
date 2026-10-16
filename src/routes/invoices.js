@@ -25,6 +25,18 @@ module.exports = async function (fastify, opts) {
 
         const companyId = request.user?.companyId || request.companyId
 
+        // must be one of this company's customers (not a vendor / another company's)
+        const customer = await fastify.prisma.customer.findFirst({
+          where: { id: customerId, companyId },
+          select: { id: true },
+        })
+        if (!customer) {
+          return reply.code(400).send({
+            statusCode: "01",
+            message: 'Customer not found — pick an existing customer',
+          })
+        }
+
         const resolved = await resolveBranch(fastify.prisma, {
           companyId,
           branchId,
@@ -73,6 +85,21 @@ module.exports = async function (fastify, opts) {
         const { vendorId, invoiceNumber, branchId, date, dueDate, items } = request.body
 
         const companyId = request.user?.companyId || request.companyId
+
+        // must be one of this company's vendors — a customer id (or another
+        // company's vendor) used to crash with Invoice_vendorId_fkey
+        const vendor = vendorId
+          ? await fastify.prisma.vendor.findFirst({
+            where: { id: vendorId, companyId },
+            select: { id: true },
+          })
+          : null
+        if (!vendor) {
+          return reply.code(400).send({
+            statusCode: "01",
+            message: vendorId ? 'Vendor not found — pick an existing vendor' : 'vendorId required',
+          })
+        }
 
         const resolved = await resolveBranch(fastify.prisma, {
           companyId,

@@ -4,6 +4,7 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "build": "prisma generate",
     "start": "NODE_ENV=production node src/server.js",
     "seed": "node prisma/seed.js",
     "seedcurrency": "node prisma/seedCurrency.js",

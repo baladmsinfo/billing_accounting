@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "build": "prisma generate",
+    "check:paths": "node scripts/check-paths.js",
     "start": "NODE_ENV=production node src/server.js",
     "seed": "node prisma/seed.js",
     "seedcurrency": "node prisma/seedCurrency.js",

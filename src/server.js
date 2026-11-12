@@ -85,8 +85,19 @@ fastify.after(async () => {
   // Common plugins
   fastify.register(require('@fastify/helmet'))
 
+  // fastify.register(require('@fastify/cors'), {
+  //   origin: true,
+  //   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  //   allowedHeaders: [
+  //     'Content-Type',
+  //     'Authorization',
+  //     'x-api-key',
+  //     'X-API-Key'
+  //   ],
+  // })
+
   fastify.register(require('@fastify/cors'), {
-    origin: true,
+    origin: fastify.config.allowedOrigins, // Uses your parsed array instead of 'true'
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
@@ -95,6 +106,7 @@ fastify.after(async () => {
       'X-API-Key'
     ],
   })
+
 
   // App plugins
   fastify.register(require('./plugins/prisma'))

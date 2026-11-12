@@ -83,38 +83,7 @@ fastify.after(async () => {
   fastify.register(uploadToSpacesPlugin);
 
   // Common plugins
-  fastify.register(require('@fastify/helmet'), {
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  })
-
-  fastify.register(require('@fastify/cors'), {
-    origin: (origin, cb) => {
-      // 1. Allow requests with no origin (native Android HTTP, mobile tools, curl)
-      if (!origin) {
-        return cb(null, true);
-      }
-
-      // 2. Allow origins listed in your Coolify allowedOrigins variable
-      if (fastify.config.allowedOrigins.includes(origin)) {
-        return cb(null, true);
-      }
-
-      // 3. Log any blocked origin to Coolify Runtime Logs for easy debugging
-      fastify.log.warn(`CORS blocked origin: ${origin}`);
-      return cb(new Error('Not allowed by CORS'), false);
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-api-key',
-      'X-API-Key',
-      'token',
-      'X-Requested-With'
-    ],
-    credentials: true
-  })
-
+  fastify.register(require('@fastify/helmet'))
 
   // fastify.register(require('@fastify/cors'), {
   //   origin: true,
@@ -127,16 +96,16 @@ fastify.after(async () => {
   //   ],
   // })
 
-  // fastify.register(require('@fastify/cors'), {
-  //   origin: fastify.config.allowedOrigins, // Uses your parsed array instead of 'true'
-  //   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  //   allowedHeaders: [
-  //     'Content-Type',
-  //     'Authorization',
-  //     'x-api-key',
-  //     'X-API-Key'
-  //   ],
-  // })
+  fastify.register(require('@fastify/cors'), {
+    origin: fastify.config.allowedOrigins, // Uses your parsed array instead of 'true'
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-api-key',
+      'X-API-Key'
+    ],
+  })
 
 
   // App plugins
